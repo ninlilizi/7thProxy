@@ -241,3 +241,7 @@ socks5/.vs/socks5/V15
 # format (NuGet v4 and .NET Core).
 project.lock.json
 project.assets.json
+
+# SQLite3
+sqlite3/storage.ide-shm
+sqlite3/storage.ide-wal
