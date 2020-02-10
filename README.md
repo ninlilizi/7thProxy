@@ -1,6 +1,7 @@
-# About NKLIProxy
-NKLIProxy is a Titanium based, caching, HTTP/HTTPS proxy server written in C#
+# About 7thProxy
+7thProxy is a Titanium based, caching, HTTP/HTTPS proxy server written in C#  
 
+The focus is on ease of use for a click'n'go Windows caching proxy client.
 
 # Features
 
@@ -12,7 +13,7 @@ All the functionality of Titanium, plus:
 
 # Usage
 
-Unzip package and execute NKLIProxy.exe.  
+Unzip package and execute 7thProxy.exe.  
 Elevation is requried to automatically manage system certificates. System proxy settings shall be configured automatically.  
 On first execution a CA cert shall be generated and user prompted to accept installation. This is required for caching HTTPS content. Failure to accept certificate installation will result in certificate errors on attempting to access any web-sites.  
 

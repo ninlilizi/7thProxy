@@ -22,7 +22,7 @@ using System.Net;
 using Titanium.Web.Proxy.Helpers;
 
 
-namespace NKLISocksClient
+namespace NKLIProxyClient
 {
     class Program
     {
