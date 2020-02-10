@@ -1,0 +1,737 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>SJP.DiskCache</name>
+    </assembly>
+    <members>
+        <member name="T:SJP.DiskCache.CacheEntry`1">
+            <summary>
+            A cache entry to be used for assisting with accessing and applying cache policies within a disk cache.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.CacheEntry`1.#ctor(`0,System.UInt64)">
+            <summary>
+            Initializes a cache entry.
+            </summary>
+            <param name="key">The key of the cache entry that is used to retrieve data from a disk cache.</param>
+            <param name="size">The size (on disk) of the data that the key is associated with.</param>
+        </member>
+        <member name="M:SJP.DiskCache.CacheEntry`1.#ctor">
+            <summary>
+            Persistent Dictionary required constructor
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.CacheEntry`1.Key">
+            <summary>
+            The key that the entry represents when looking up in the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.CacheEntry`1.Size">
+            <summary>
+            The size of the data that the cache entry is associated with.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.CacheEntry`1.LastAccessed">
+            <summary>
+            The last time at which the entry was retrieved from the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.CacheEntry`1.CreationTime">
+            <summary>
+            When the cache entry was created.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.CacheEntry`1.AccessCount">
+            <summary>
+            The number of times that the cache entry has been accessed.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.CacheEntry`1.Refresh">
+            <summary>
+            Refreshes the cache entry, primarily to acknowledge an access. Increments access count and restarts access timer.
+            </summary>
+        </member>
+        <member name="T:SJP.DiskCache.DiskCache`1">
+            <summary>
+            A disk-based caching store.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.#ctor(System.IO.DirectoryInfo,SJP.DiskCache.ICachePolicy{`0},System.UInt64,System.Nullable{System.TimeSpan},System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Creates a disk-based caching store.
+            </summary>
+            <param name="directory">A directory.</param>
+            <param name="cachePolicy">A cache policy to apply to values in the cache.</param>
+            <param name="storageCapacity">The maximum amount of space to store in the cache.</param>
+            <param name="pollingInterval">The maximum time that will elapse before a cache policy will be applied. Defaults to 1 minute.</param>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="directory"/> is <c>null</c> or <paramref name="cachePolicy"/> is <c>null</c>.</exception>
+            <exception cref="T:System.IO.DirectoryNotFoundException"><paramref name="directory"/> does not exist.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="storageCapacity"/> is less than <c>1</c>. Can also be thrown when <paramref name="pollingInterval"/> represents a negative timespan or a zero-length timespan.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.#ctor(System.String,SJP.DiskCache.ICachePolicy{`0},System.UInt64,System.Nullable{System.TimeSpan},System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Creates a disk-based caching store.
+            </summary>
+            <param name="directoryPath">A path to a directory.</param>
+            <param name="cachePolicy">A cache policy to apply to values in the cache.</param>
+            <param name="storageCapacity">The maximum amount of space to store in the cache.</param>
+            <param name="pollingInterval">The maximum time that will elapse before a cache policy will be applied. Defaults to 1 minute.</param>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="directoryPath"/> is <c>null</c>, empty or whitespace. Also thrown when <paramref name="cachePolicy"/> is <c>null</c>.</exception>
+            <exception cref="T:System.IO.DirectoryNotFoundException">The directory at <paramref name="directoryPath"/> does not exist.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="storageCapacity"/> is less than <c>1</c>. Can also be thrown when <paramref name="pollingInterval"/> represents a negative timespan or a zero-length timespan.</exception>
+        </member>
+        <member name="P:SJP.DiskCache.DiskCache`1.MaximumStorageCapacity">
+            <summary>
+            The maximum size that the cache can contain. This can be temporarily exceeded when a file is added that is too large, to a maximum of twice the storage capacity.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.DiskCache`1.PollingInterval">
+            <summary>
+            The maximum timespan that will occur before the cache policy will be re-evaluated on cache entries.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.DiskCache`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.DiskCache`1.Policy">
+            <summary>
+            The cache eviction policy that evaluates which entries should be removed from the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.DiskCache`1.CachePath">
+            <summary>
+            The directory that is storing the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.DiskCache`1.EntryAdded">
+            <summary>
+            Occurs when an entry has been added to the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.DiskCache`1.EntryUpdated">
+            <summary>
+            Occurs when an entry has been updated in the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.DiskCache`1.EntryRemoved">
+            <summary>
+            Occurs when an entry has been removed or evicted from the cache.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.Clear">
+            <summary>
+            Empties the cache of all values that it is currently tracking.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.ClearAsync">
+            <summary>
+            Empties the cache of all values that it is currently tracking.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.ContainsKey(`0)">
+            <summary>
+            Determines whether the <see cref="T:SJP.DiskCache.DiskCache`1" /> contains the specified key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.ContainsKeyAsync(`0)">
+            <summary>
+            Asynchronously determines whether the <see cref="T:SJP.DiskCache.DiskCache`1" /> contains the specified key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.GetValue(`0)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A stream of data from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.GetValueAsync(`0)">
+            <summary>
+            Asynchronously gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A stream of data from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.SetValue(`0,System.IO.Stream)">
+            <summary>
+            Stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="value"/> is not readable.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.TrySetValue(`0,System.IO.Stream)">
+            <summary>
+            Stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns><c>true</c> if the data was able to be stored without error; otherwise <c>false</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="value"/> is not readable.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.SetValueCore(`0,System.IO.Stream)">
+            <summary>
+            Stores a value associated with a key. Returns a status on whether the operation completed and how it failed if not.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns>A <see cref="T:SJP.DiskCache.DiskCache`1.SetStatus"/> value on whether the operation completed and how it failed if not.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="value"/> is not readable.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.SetValueAsync(`0,System.IO.Stream)">
+            <summary>
+            Asynchronously stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.TrySetValueAsync(`0,System.IO.Stream)">
+            <summary>
+            Asynchronously stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns><c>true</c> if the data was able to be stored without error; otherwise <c>false</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.SetValueCoreAsync(`0,System.IO.Stream)">
+            <summary>
+            Asynchronously stores a value associated with a key. Returns a status on whether the operation completed and how it failed if not.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns>A <see cref="T:SJP.DiskCache.DiskCache`1.SetStatus"/> value on whether the operation completed and how it failed if not.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c> or <paramref name="value"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="value"/> is not readable.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.TryGetValue(`0,System.IO.Stream@)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <param name="stream">A stream of data from the cache. Will be <c>null</c> when <paramref name="key" /> does not exist in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.TryGetValue(`0)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A tuple of two values. A boolean determines whether <paramref name="key" /> is present in the cache. If <paramref name="key" /> is present, the <see cref="T:System.IO.Stream" /> value will be provided, otherwise it will be <c>null</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.TryGetValueAsync(`0)">
+            <summary>
+            Asynchronously gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A tuple of two values. A boolean determines whether <paramref name="key" /> is present in the cache. If <paramref name="key" /> is present, the <see cref="T:System.IO.Stream" /> value will be provided, otherwise it will be <c>null</c>.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.Dispose">
+            <summary>
+            Releases all resources held by the cache. Additionally clears the cache directory.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.Dispose(System.Boolean)">
+            <summary>
+            Releases all resources held by the cache. Additionally clears the cache directory.
+            </summary>
+            <param name="disposing"><c>true</c> if managed resources are to be disposed. <c>false</c> will not dispose any resources.</param>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.ApplyCachePolicy">
+            <summary>
+            Applies the cache policy to all values held in the cache.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.GetPath(System.String)">
+            <summary>
+            Retrieves a fully qualified path used to store the cached value.
+            </summary>
+            <param name="hash">A hash of the contents of the cache.</param>
+            <returns>A fully qualified path for a cached value.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="hash"/> is <c>null</c>, empty, or whitespace.</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="hash"/> is not 64 characters long and does not contain only hexadecimal characters.</exception>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.IsValidHexChar(System.Char)">
+            <summary>
+            Convenience method used to determine whether a character is a valid hexadecimal character.
+            </summary>
+            <param name="c">A unicode character.</param>
+            <returns><c>true</c> if the value is a hexadecimal character; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.DiskCache`1.IsNull(`0)">
+            <summary>
+            Determines whether a provided key value is <c>null</c>.
+            </summary>
+            <param name="key">A cache key value.</param>
+            <returns><c>true</c> if the key value is <c>null</c>; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="T:SJP.DiskCache.DiskCache`1.SetStatus">
+            <summary>
+            Contains values used to determine how the set operation completed.
+            </summary>
+        </member>
+        <member name="F:SJP.DiskCache.DiskCache`1.SetStatus.Success">
+            <summary>
+            The set operation completed successfully.
+            </summary>
+        </member>
+        <member name="F:SJP.DiskCache.DiskCache`1.SetStatus.DataTooLarge">
+            <summary>
+            The set operation failed because the data passed into the cache was too large.
+            </summary>
+        </member>
+        <member name="T:SJP.DiskCache.ICacheEntry`1">
+            <summary>
+            Represents a generic cache entry, including information useful for cache policies.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="P:SJP.DiskCache.ICacheEntry`1.Key">
+            <summary>
+            The key that the entry represents when looking up in the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.ICacheEntry`1.Size">
+            <summary>
+            The size of the data that the cache entry is associated with.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.ICacheEntry`1.LastAccessed">
+            <summary>
+            The last time at which the entry was retrieved from the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.ICacheEntry`1.CreationTime">
+            <summary>
+            When the cache entry was created.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.ICacheEntry`1.AccessCount">
+            <summary>
+            The number of times that the cache entry has been accessed.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.ICacheEntry`1.Refresh">
+            <summary>
+            Refreshes the cache entry, primarily to acknowledge an access.
+            </summary>
+        </member>
+        <member name="T:SJP.DiskCache.ICachePolicy`1">
+            <summary>
+            Represents a generic cache policy
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.ICachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+        </member>
+        <member name="T:SJP.DiskCache.IDiskCache`1">
+            <summary>
+            Defines methods, properties and events used to manage a disk-based cache.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="P:SJP.DiskCache.IDiskCache`1.MaximumStorageCapacity">
+            <summary>
+            The maximum size that the cache can contain.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.IDiskCache`1.Policy">
+            <summary>
+            The cache eviction policy that evaluates which entries should be removed from the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCache`1.EntryAdded">
+            <summary>
+            Occurs when an entry has been added to the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCache`1.EntryUpdated">
+            <summary>
+            Occurs when an entry has been updated in the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCache`1.EntryRemoved">
+            <summary>
+            Occurs when an entry has been removed or evicted from the cache.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.Clear">
+            <summary>
+            Empties the cache of all values that it is currently tracking.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.ContainsKey(`0)">
+            <summary>
+            Determines whether the <see cref="T:SJP.DiskCache.IDiskCache`1"/> contains the specified key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.GetValue(`0)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A stream of data from the cache.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.TryGetValue(`0,System.IO.Stream@)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <param name="stream">A stream of data from the cache. Will be <c>null</c> when <paramref name="key"/> does not exist in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.TryGetValue(`0)">
+            <summary>
+            Gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A tuple of two values. A boolean determines whether <paramref name="key"/> is present in the cache. If <paramref name="key"/> is present, the <see cref="T:System.IO.Stream"/> value will be provided, otherwise it will be <c>null</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.SetValue(`0,System.IO.Stream)">
+            <summary>
+            Stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCache`1.TrySetValue(`0,System.IO.Stream)">
+            <summary>
+            Stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns><c>true</c> if the data was able to be stored without error; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="T:SJP.DiskCache.IDiskCacheAsync`1">
+            <summary>
+            Defines methods, properties and events used to manage an asynchronous disk-based cache.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="P:SJP.DiskCache.IDiskCacheAsync`1.MaximumStorageCapacity">
+            <summary>
+            The maximum size that the cache can contain.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.IDiskCacheAsync`1.Policy">
+            <summary>
+            The cache eviction policy that evaluates which entries should be removed from the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCacheAsync`1.EntryAdded">
+            <summary>
+            Occurs when an entry has been added to the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCacheAsync`1.EntryUpdated">
+            <summary>
+            Occurs when an entry has been updated in the cache.
+            </summary>
+        </member>
+        <member name="E:SJP.DiskCache.IDiskCacheAsync`1.EntryRemoved">
+            <summary>
+            Occurs when an entry has been removed or evicted from the cache.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.ClearAsync">
+            <summary>
+            Empties the cache of all values that it is currently tracking.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.ContainsKeyAsync(`0)">
+            <summary>
+            Asynchronously determines whether the <see cref="T:SJP.DiskCache.IDiskCache`1"/> contains the specified key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns><c>true</c> if the cache contains the key; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.GetValueAsync(`0)">
+            <summary>
+            Asynchronously gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A stream of data from the cache.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.TryGetValueAsync(`0)">
+            <summary>
+            Asynchronously gets the value associated with a key.
+            </summary>
+            <param name="key">The key to locate in the cache.</param>
+            <returns>A tuple of two values. A boolean determines whether <paramref name="key"/> is present in the cache. If <paramref name="key"/> is present, the <see cref="T:System.IO.Stream"/> value will be provided, otherwise it will be <c>null</c>.</returns>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.SetValueAsync(`0,System.IO.Stream)">
+            <summary>
+            Asynchronously stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+        </member>
+        <member name="M:SJP.DiskCache.IDiskCacheAsync`1.TrySetValueAsync(`0,System.IO.Stream)">
+            <summary>
+            Asynchronously stores a value associated with a key.
+            </summary>
+            <param name="key">The key used to locate the value in the cache.</param>
+            <param name="value">A stream of data to store in the cache.</param>
+            <returns><c>true</c> if the data was able to be stored without error; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="T:SJP.DiskCache.FifoCachePolicy`1">
+            <summary>
+            Evicts values in a cache that were introduced first. First-In-First-Out (FIFO).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.FifoCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a first-in-first-out cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.FifoCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.FifoCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.FixedTimespanCachePolicy`1">
+            <summary>
+            Evicts values in a cache that have been stored for a given time period.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.FixedTimespanCachePolicy`1.#ctor(System.TimeSpan,System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a fixed timespan cache policy.
+            </summary>
+            <param name="timeSpan">The timespan that a value should be kept in the cache for.</param>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="timeSpan"/> is a negative or zero-length timespan.</exception>
+        </member>
+        <member name="P:SJP.DiskCache.FixedTimespanCachePolicy`1.ExpirationTimespan">
+            <summary>
+            The maximum length of time that a value is allowed to be kept in the cache.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.FixedTimespanCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.FixedTimespanCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.LfuCachePolicy`1">
+            <summary>
+            Evicts values in a cache that are Least Frequently Used (LFU).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.LfuCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a least frequently used cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.LfuCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.LfuCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.LifoCachePolicy`1">
+            <summary>
+            Evicts values in a cache that were introduced last. Last-In-First-Out (LIFO).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.LifoCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a last-in-first-out cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.LifoCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.LifoCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.LruCachePolicy`1">
+            <summary>
+            Evicts values in a cache that are Least Recently Used (LRU).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.LruCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a least recently used cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.LruCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.LruCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.MfuCachePolicy`1">
+            <summary>
+            Evicts values in a cache that are Most Frequently Used (MFU).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.MfuCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a most frequently used cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.MfuCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.MfuCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.MruCachePolicy`1">
+            <summary>
+            Evicts values in a cache that are Most Recently Used (MRU).
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.MruCachePolicy`1.#ctor(System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a most recently used cache policy.
+            </summary>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+        </member>
+        <member name="P:SJP.DiskCache.MruCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.MruCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+        <member name="T:SJP.DiskCache.SlidingTimespanCachePolicy`1">
+            <summary>
+            Evicts values in a cache that have been not been accessed for a given time period.
+            </summary>
+            <typeparam name="TKey">The type of keys used in the cache.</typeparam>
+        </member>
+        <member name="M:SJP.DiskCache.SlidingTimespanCachePolicy`1.#ctor(System.TimeSpan,System.Collections.Generic.IEqualityComparer{`0})">
+            <summary>
+            Initializes a sliding timespan cache policy.
+            </summary>
+            <param name="timeSpan">The timespan that a value should be kept in the cache for.</param>
+            <param name="keyComparer">The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys, or <c>null</c> to use the default <see cref="T:System.Collections.Generic.EqualityComparer`1"/> implementation for the set type.</param>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="timeSpan"/> is a negative or zero-length timespan.</exception>
+        </member>
+        <member name="P:SJP.DiskCache.SlidingTimespanCachePolicy`1.ExpirationTimespan">
+            <summary>
+            The maximum length of time that a value is allowed to be kept in the cache without being accessed.
+            </summary>
+        </member>
+        <member name="P:SJP.DiskCache.SlidingTimespanCachePolicy`1.KeyComparer">
+            <summary>
+            The <see cref="T:System.Collections.Generic.IEqualityComparer`1"/> implementation to use when comparing cache keys.
+            </summary>
+        </member>
+        <member name="M:SJP.DiskCache.SlidingTimespanCachePolicy`1.GetExpiredEntries(System.Collections.Generic.IEnumerable{SJP.DiskCache.ICacheEntry{`0}},System.UInt64)">
+            <summary>
+            Retrieves the set of entries that are now expired in the cache.
+            </summary>
+            <param name="entries">The set of cache entries to evaluate.</param>
+            <param name="maximumStorageCapacity">The maximum size of the disk cache. Useful for determining ordering of cache entries.</param>
+            <returns>A collection of entries that should be evicted from the cache.</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="entries"/> is <c>null</c>.</exception>
+            <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="maximumStorageCapacity"/> is equal to zero.</exception>
+        </member>
+    </members>
+</doc>

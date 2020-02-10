@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net46</TargetFrameworks>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>WatsonDedupe</PackageId>
+    <Version>1.5.0</Version>
+    <Authors>Joel Christner</Authors>
+    <Product>WatsonDedupe</Product>
+    <Description>Standalone C# library for deduplication of data using Sqlite.</Description>
+    <PackageProjectUrl>https://github.com/jchristn/WatsonDedupe</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jchristn/WatsonDedupe</RepositoryUrl>
+    <RepositoryUrl>https://github.com/jchristn/WatsonDedupe</RepositoryUrl>
+    <RepositoryType>Github</RepositoryType>
+    <PackageReleaseNotes>Added DbProvider class to allow a developer to use their own database instead of Sqlite.</PackageReleaseNotes>
+    <PackageTags>dedupe deduplication compression compress</PackageTags>
+    <PackageLicenseUrl>https://github.com/jchristn/WatsonDedupe/blob/master/LICENSE.md</PackageLicenseUrl>
+    <Copyright>(c)2019 Joel Christner</Copyright>
+    <PackageIconUrl>https://raw.githubusercontent.com/jchristn/WatsonDedupe/master/assets/icon.ico</PackageIconUrl>
+    <RootNamespace>WatsonDedupe</RootNamespace>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <LangVersion>default</LangVersion>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net46|AnyCPU'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <DocumentationFile></DocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net46|AnyCPU'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <DefineConstants />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EntityFramework" Version="6.4.0" />
+    <PackageReference Include="SlidingWindow" Version="1.0.6" />
+    <PackageReference Include="System.Data.SQLite" Version="1.0.112" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.112" />
+    <PackageReference Include="System.Data.SQLite.EF6" Version="1.0.112" />
+    <PackageReference Include="System.Data.SQLite.Linq" Version="1.0.112" />
+  </ItemGroup>
+
+</Project>

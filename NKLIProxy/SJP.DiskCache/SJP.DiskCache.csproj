@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net461</TargetFrameworks>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+    <TreatSpecificWarningsAsErrors />
+    <DocumentationFile></DocumentationFile>
+    <Authors>Simon Potter</Authors>
+    <Company />
+    <Product />
+    <Description>Disk-based caching for large objects in .NET</Description>
+    <Copyright>Copyright © Simon Potter 2019</Copyright>
+    <PackageLicenseUrl>https://raw.github.com/sjp/DiskCache/master/LICENSE</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/sjp/DiskCache</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sjp/DiskCache</RepositoryUrl>
+    <PackageIconUrl>https://raw.github.com/sjp/DiskCache/master/diskcache.svg</PackageIconUrl>
+    <RootNamespace>SJP</RootNamespace>
+    <ApplicationIcon />
+    <StartupObject />
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <OutputType>Library</OutputType>
+    <PackageReleaseNotes>Added long-term persistent storage functionality.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net46|AnyCPU'">
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net461|AnyCPU'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <CodeAnalysisRuleSet>SJP.DiskCache1.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net461|AnyCPU'">
+    <CodeAnalysisRuleSet>SJP.DiskCache1.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Community.CsharpSqlite.SQLiteClient" Version="3.7.7.3" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+  </ItemGroup>
+
+</Project>
