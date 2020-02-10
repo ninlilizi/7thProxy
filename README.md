@@ -1,11 +1,10 @@
 # About NKLIProxy
-NKLIProxy is a HTTP/HTTPS proxy server/client written in C#. The server is both high performance and low latency, with maximum throughput thought through.
-NKLIProxy is a Titanium based caching proxy server.
+NKLIProxy is a Titanium based, caching, HTTP/HTTPS proxy server written in C#
 
 
 # Features
 
-All the functionality of Titanium plus:
+All the functionality of Titanium, plus:
 
 * Memory cache with LRU eviction policy
 * DeDuplicated and compressed disk cache with selectable eviction policies (LFU default).
