@@ -287,57 +287,65 @@ namespace NKLI.DeDupeProxy
                     { Thread.Sleep(100); }
                     queueLock = true;
 
-                    using (var session = chunkQueue.OpenSession())
+                    try
                     {
-                        var data = session.Dequeue();
-                        session.Flush();
-
-                        queueLock = false;
-                        if (data == null) { Thread.Sleep(1000); continue; }
-
-                        // First decode request from queue
-                        try
+                        using (var session = chunkQueue.OpenSession())
                         {
-                            ObjectStruct chunkStruct = new ObjectStruct();
-                            chunkStruct.UnPackStruct(data);
-                            
+                            var data = session.Dequeue();
+                            session.Flush();
+
+                            queueLock = false;
+                            if (data == null) { Thread.Sleep(1000); continue; }
+
+                            // First decode request from queue
                             try
                             {
-                                int bodyLength = chunkStruct.Body.Length;
-                                string bodyURI = chunkStruct.URI;
+                                ObjectStruct chunkStruct = new ObjectStruct();
+                                chunkStruct.UnPackStruct(data);
 
-                                string responseString = "";
-                                if (bodyLength != 0)
+                                try
                                 {
-                                    deDupe.StoreOrReplaceObject(chunkStruct.URI + "Body", chunkStruct.Body, out Chunks);
-                                    responseString = ("<Titanium> (DeDupe) stored object, Size:" + TitaniumHelper.FormatSize(bodyLength) + ", Chunks:" + Chunks.Count + ", URI:" + bodyURI + Environment.NewLine);
+                                    int bodyLength = chunkStruct.Body.Length;
+                                    string bodyURI = chunkStruct.URI;
+
+                                    string responseString = "";
+                                    if (bodyLength != 0)
+                                    {
+                                        deDupe.StoreOrReplaceObject(chunkStruct.URI + "Body", chunkStruct.Body, out Chunks);
+                                        responseString = ("<Titanium> (DeDupe) stored object, Size:" + TitaniumHelper.FormatSize(bodyLength) + ", Chunks:" + Chunks.Count + ", URI:" + bodyURI + Environment.NewLine);
+                                    }
+                                    else responseString = ("<Titanium> (DeDupe) refreshed object, URI:" + bodyURI + Environment.NewLine);
+
+
+                                    deDupe.StoreOrReplaceObject(chunkStruct.URI + "Headers", chunkStruct.Headers, out Chunks);
+
+                                    if (deDupe.IndexStats(out NumObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
+                                        await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
                                 }
-                                else responseString = ("<Titanium> (DeDupe) refreshed object, URI:" + bodyURI + Environment.NewLine);
-                                
+                                catch { await WriteToConsole("<Titanium> [ERROR] Dedupilication attempt failed, URI:" + chunkStruct.URI, ConsoleColor.Red); }
 
-                                deDupe.StoreOrReplaceObject(chunkStruct.URI + "Headers", chunkStruct.Headers, out Chunks);
-
-                                if (deDupe.IndexStats(out NumObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
-                                    await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
+                                //session.Flush();
                             }
-                            catch { await WriteToConsole("<Titanium> [ERROR] Dedupilication attempt failed, URI:" + chunkStruct.URI, ConsoleColor.Red); }
+                            catch (Exception err)
+                            {
+                                await WriteToConsole("<Titanium> [ERROR] Exception occured while unpacking from deduplication queue." + err, ConsoleColor.Red);
+                                continue;
+                            }
 
-                            //session.Flush();
-                        }
-                        catch (Exception err)
-                        {
-                            await WriteToConsole("<Titanium> [ERROR] Exception occured while unpacking from deduplication queue." + err, ConsoleColor.Red);
-                            continue;
-                        }
 
-                        
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await WriteToConsole("<Titanium> [ERROR] Worker queue locked on attempted open" + Environment.NewLine + ex, ConsoleColor.Red);
                     }
                 }
             });
 
             // We prepare the DeDuplication queue before starting the worker threads
             if (File.Exists("chunkQueue//lock")) DeleteChildren("chunkQueue", true);
-            chunkQueue = new PersistentQueue("chunkQueue");
+            chunkQueue = new PersistentQueue("chunkQueue", DiskQueue.Implementation.Constants._32Megabytes, false);
+            chunkQueue.Internals.TrimTransactionLogOnDispose = true;
             chunkQueue.Internals.ParanoidFlushing = true;
 
             //threadWriteChunks.Priority = ThreadPriority.BelowNormal;
@@ -421,7 +429,7 @@ namespace NKLI.DeDupeProxy
             }
 
             // Don't decrypt these domains
-            dontDecrypt = new List<string> { "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com" };
+            dontDecrypt = new List<string> { "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com", "netflix.com" };
 
             // Only explicit proxies can be set as system proxy!
             //proxyServer.SetAsSystemHttpProxy(explicitEndPoint);
