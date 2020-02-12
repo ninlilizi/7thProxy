@@ -901,50 +901,80 @@ namespace NKLI.DeDupeProxy
                             // No-Cache
                             if (cacheControl.NoCache)
                             {
+                                if (canCache) e.HttpClient.Response.Headers.AddHeader("Expires", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
                                 readableMessage += "(No-Cache) ";
-                                if ((!cacheControl.MaxAge.HasValue) && (canCache)) e.HttpClient.Response.Headers.AddHeader("Expires", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
                             }
                             // Max-Age
                             if (cacheControl.MaxAge.HasValue)
                             {
-                                readableMessage += "(Max-Age=" + String.Format("{0:n0}", cacheControl.MaxAge.Value.TotalSeconds) + ", ";
+                                readableMessage += "(Max-Age=" + String.Format("{0:n0}", cacheControl.MaxAge.Value.TotalSeconds) + ") ";
 
-                                // Get DateTime indicated by Max-Age
-                                DateTime maxAgeDateTime = DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime();
-
-                                if (e.HttpClient.Response.Headers.HeaderExists("Expires"))
+                                if ((!cacheControl.NoCache) && (canCache))
                                 {
-                                    // Get Expires header
-                                    HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToLongDateString() + " 00:00:00 GMT");
-                                    try
-                                    {
-                                        HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
-                                        if (header != null) cacheExpires = header;
-                                    }
-                                    catch
-                                    {
-                                        await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
-                                    }
+                                    // Get DateTime indicated by Max-Age
+                                    DateTime maxAgeDateTime = DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime();
 
-                                    // If Max-Age arrives before existing Expires header
-                                    if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), maxAgeDateTime))
+                                    if (e.HttpClient.Response.Headers.HeaderExists("Expires"))
                                     {
-                                        // Replace Expires with Max-Age derived timestape
-                                        e.HttpClient.Response.Headers.RemoveHeader("Expires");
-                                        e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                        readableMessage += "Policy: Max-Age) ";
+                                        bool policyMaxAge = false;
+
+                                        // Get Expires header
+                                        HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                        try
+                                        {
+                                            HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
+                                            if (header != null)
+                                            {
+                                                if (header.Value != "0") // TODO - Needs further debugging
+                                                {
+                                                    readableMessage = "(Expires) " + readableMessage;
+                                                    cacheExpires = header;
+
+                                                    // If Max-Age arrives before existing Expires header
+                                                    try
+                                                    {
+                                                        if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), maxAgeDateTime)) policyMaxAge = true;
+                                                    }
+                                                    catch (Exception ex)
+                                                    {
+                                                        readableMessage += "[Policy: ERROR] ";
+                                                        await WriteToConsole("<Titanium> [ERROR] (onResponse) Exception occured comparing Expires/Max-Age" + Environment.NewLine + "maxAgeDateTime: " + maxAgeDateTime + ", Expires: " + cacheExpires.Value + Environment.NewLine + ex, ConsoleColor.Red);
+                                                    }
+                                                }
+                                                else policyMaxAge = true;
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                                        }
+
+                                        // If Max-Age arrives before existing Expires header
+                                        if (policyMaxAge)
+                                        {
+                                            // Replace Expires with Max-Age derived timestape
+                                            e.HttpClient.Response.Headers.RemoveHeader("Expires");
+                                            e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                            readableMessage += "[Policy: Max-Age] ";
+                                        }
+                                        else readableMessage += "[Policy: Expires] ";
+
                                     }
-                                    else readableMessage += "Policy: Expires) ";
+                                    // If Expires doesn't exist then add from MaxAge timestamp
+                                    else
+                                    {
+                                        e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                        readableMessage += "[Policy: Max-Age] ";
+                                    }
                                 }
-                                // If Expires doesn't exist then add from MaxAge timestamp
                                 else
                                 {
-                                    e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                    readableMessage += "Policy: Max-Age) ";
+                                    if (!canCache) readableMessage += "[Policy: NoStore] ";
+                                    else readableMessage += "[Policy: NoCache] ";
                                 }
                             }
 
-                            await WriteToConsole("<Titanium> Respecting " + readableMessage + "header for key:" + Key, ConsoleColor.DarkYellow);
+                            await WriteToConsole("<Titanium> Cache-Control: " + readableMessage + "header for key:" + Key, ConsoleColor.DarkYellow);
                         }
                         if (!canCache)
                         {
@@ -992,8 +1022,20 @@ namespace NKLI.DeDupeProxy
                                         sessionQueue.Enqueue(responseStruct.packed);
                                         sessionQueue.Flush();
                                     }
-                                    catch { await WriteToConsole("<Titanium> [ERROR] Unable to write response body to cache", ConsoleColor.Red); }
+                                    catch (Exception ex)
+                                    {
+                                        await WriteToConsole("<Titanium> [ERROR] Unable to write response body to cache" + Environment.NewLine + ex, ConsoleColor.Red);
+                                    }
 
+                                }
+                                else
+                                {
+
+                                    if (e.HttpClient.Response.ContentLength > 512) await WriteToConsole("<Titanium> Skipping cache as under 512 Bytes, key: "+ Key);
+
+                                    // We only want one of these as Content-Size mismatch could be reason for appearing oversized
+                                    if (output.LongLength != e.HttpClient.Response.ContentLength) await WriteToConsole("<Titanium> Skipping cache due to mismatch between Content-Size and received object, key: " + Key, ConsoleColor.Magenta);
+                                    else if (maxObjectSizeHTTP < e.HttpClient.Response.ContentLength) await WriteToConsole("<Titanium> Skipping cache as larger than configured Max Object Size, key: " + Key, ConsoleColor.Magenta);
                                 }
                             }
                             catch
@@ -1006,9 +1048,9 @@ namespace NKLI.DeDupeProxy
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    await WriteToConsole("<Titanium> [ERROR] (onResponse) Exception occured receiving response body", ConsoleColor.Red);
+                    await WriteToConsole("<Titanium> [ERROR] (onResponse) Exception occured receiving response body" + Environment.NewLine + ex, ConsoleColor.Red);
                     //throw new Exception("<Titanium> (onResponse) Exception occured receiving response body");
                 }
 
