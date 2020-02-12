@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace SJP.DiskCache
 {
@@ -25,13 +24,6 @@ namespace SJP.DiskCache
 
             Key = key;
             Size = size;
-
-            // using a stopwatch instead of a raw datetime.
-            // the reason for this is to handle changes in system time and time zone
-            // without reporting incorrect values.
-            //_lastAccessedTimer = new Stopwatch();
-            //_lastAccessedTimer.Start();
-
         }
 
 
@@ -80,14 +72,12 @@ namespace SJP.DiskCache
         public void Refresh()
         {
             Interlocked.Increment(ref _accessCount);
-            //_lastAccessedTimer.Restart();
             LastAccessed = DateTime.Now;
         }
 
         private static bool IsNull(TKey key) => !_isValueType && EqualityComparer<TKey>.Default.Equals(key, default(TKey));
 
         private long _accessCount;
-        //private readonly Stopwatch _lastAccessedTimer;
 
         private readonly static bool _isValueType = typeof(TKey).IsValueType;
     }

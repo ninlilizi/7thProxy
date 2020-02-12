@@ -179,6 +179,7 @@ namespace SJP.DiskCache
 
 
                     }
+                    _fileLookup.TryRemove(entry.Key, out var tmpFilePath);
                     _entryLookup.TryRemove(entry.Key, out var lookupEntry);
                     EntryRemoved?.Invoke(this, lookupEntry);
                 }
@@ -210,6 +211,7 @@ namespace SJP.DiskCache
                     if (IsFileLocked(fileInfo)) Console.WriteLine("Attempt to delete locked file: " + fileInfo);
                     {
                         File.Delete(_fileLookup[entry.Key].Name);
+                        _fileLookup.TryRemove(entry.Key, out var tmpFilePath);
                         _entryLookup.TryRemove(entry.Key, out var lookupEntry);
                         EntryRemoved?.Invoke(this, lookupEntry);
                     }
@@ -641,6 +643,30 @@ namespace SJP.DiskCache
                 stream = await GetValueAsync(key).ConfigureAwait(false);
 
             return (hasValue, stream);
+        }
+
+        /// <summary>
+        /// Refresh the metadata associated with a key
+        /// </summary>
+        /// <param name="key">The key to locate in the cache.</param>
+        /// <returns>A stream of data from the cache.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
+        public bool RefreshValue(TKey key)
+        {
+            if (IsNull(key))
+                throw new ArgumentNullException(nameof(key));
+            if (!ContainsKey(key))
+                throw new KeyNotFoundException($"Could not find a value for the key '{ key }'");
+
+            var path = _fileLookup[key].Name;
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"Expected to find a path at the path '{ path }', but it does not exist.", path);
+
+            var cacheEntry = _entryLookup[key];
+            cacheEntry.Refresh();
+            _entryLookup[key] = cacheEntry;
+
+            return true;
         }
 
         /// <summary>

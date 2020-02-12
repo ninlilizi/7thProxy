@@ -325,13 +325,16 @@ namespace NKLI.DeDupeProxy
                                     if (deDupe.IndexStats(out NumObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
                                         await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
                                 }
-                                catch { await WriteToConsole("<Titanium> [ERROR] Dedupilication attempt failed, URI:" + chunkStruct.URI, ConsoleColor.Red); }
+                                catch (Exception ex)
+                                {
+                                    await WriteToConsole("<Titanium> [ERROR] Dedupilication attempt failed, URI:" + chunkStruct.URI + Environment.NewLine + ex, ConsoleColor.Red);
+                                }
 
                                 //session.Flush();
                             }
-                            catch (Exception err)
+                            catch (Exception ex)
                             {
-                                await WriteToConsole("<Titanium> [ERROR] Exception occured while unpacking from deduplication queue." + err, ConsoleColor.Red);
+                                await WriteToConsole("<Titanium> [ERROR] Exception occured while unpacking from deduplication queue." + Environment.NewLine + ex, ConsoleColor.Red);
                                 continue;
                             }
 
@@ -580,8 +583,7 @@ namespace NKLI.DeDupeProxy
                 e.CustomUpStreamProxy = new ExternalProxy("localhost", 8888);
             }*/
 
-            await WriteToConsole("Active Client Connections:" + ((ProxyServer)sender).ClientConnectionCount);
-            await WriteToConsole(e.HttpClient.Request.Url);
+            await WriteToConsole("Active Client Connections:" + ((ProxyServer)sender).ClientConnectionCount + ", " + e.HttpClient.Request.Url);
 
             // store it in the UserData property
             // It can be a simple integer, Guid, or any type
@@ -1078,42 +1080,54 @@ namespace NKLI.DeDupeProxy
             {
                 memoryCache.AddReplace(data.Key, data.Value);
             }
-            catch
+            catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("<Titanium> ERROR writing to memory cache, Key:" + data.Key);
+                Console.WriteLine("<Titanium> ERROR writing chunk to memory cache, Key:" + data.Key + Environment.NewLine + ex, ConsoleColor.Red);
                 Console.ForegroundColor = ConsoleColor.White;
             }
 
-            // Next compress & write to disk cache
-            Stream chunkStream = new MemoryStream(CompressionFactory.Lzf4.Compress(data.Value, 3));
-            chunkCache.SetValue(data.Key, chunkStream);
-            chunkStream.Dispose();
-
-            // Then write to disk
-            /*try
+            // If chunk already exists then validate and replace if necesary
+            if (chunkCache.ContainsKey(data.Key))
             {
-                File.WriteAllBytes("Chunks\\" + data.Key, data.Value);
-                using (var fs = new FileStream(
-                    "Chunks\\" + data.Key,
-                    FileMode.Create,
-                    FileAccess.Write,
-                    FileShare.None,
-                    0x1000,
-                    FileOptions.WriteThrough))
+                if (chunkCache.TryGetValue(data.Key, out Stream chunkStream))
                 {
-                    fs.Write(data.Value, 0, data.Value.Length);
-                    //fs.Dispose();
+                    //Console.WriteLine("!------------------ Attempting to decompress chunk");
+                    byte[] oldChunk = CompressionFactory.Lzf4.Decompress(chunkStream);
+
+                    // Return if existing chunk is correct
+                    if (oldChunk.SequenceEqual(data.Value)) return true;
+                    // Otherwise replace with new data
+
+                    // Attempt to delete existing chunk
+                    if (!chunkCache.TryRemove(data.Key)) return false;
+
+                }
+                // If Key exists and is unreadable
+                else
+                {
+                    // Attempt to delete
+                    if (!chunkCache.TryRemove(data.Key)) return false;
                 }
             }
-            catch
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("<Titanium> ERROR writing to disk cache, Key:" + data.Key);
-                Console.ForegroundColor = ConsoleColor.White;
-            }*/
 
-            return true;
+            // Now we're ready to write a fresh chunk to disk
+            try
+            {
+                // Next compress & write to disk cache
+                Stream chunkStream = new MemoryStream(CompressionFactory.Lzf4.Compress(data.Value, 3));
+                if (chunkCache.TrySetValue(data.Key, chunkStream))
+                {
+                    chunkStream.Dispose();
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("<Titanium> ERROR writing chunk to disk, Key:" + data.Key + Environment.NewLine + ex, ConsoleColor.Red);
+            }
+            // If writing to disk cache failed
+            return false;
         }
         byte[] ReadChunk(string key)
         {

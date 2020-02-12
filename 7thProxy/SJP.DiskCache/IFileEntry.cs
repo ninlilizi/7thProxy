@@ -1,4 +1,6 @@
-﻿namespace SJP.DiskCache
+﻿using System;
+
+namespace SJP.DiskCache
 {
     /// <summary>
     /// Represents a generic cache entry, including information useful for cache policies.
