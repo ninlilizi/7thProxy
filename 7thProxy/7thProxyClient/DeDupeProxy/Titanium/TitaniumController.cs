@@ -656,16 +656,48 @@ namespace NKLI.DeDupeProxy
                                     await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
                                 }
 
-                                // If resource has expired or client sent a revalidation request
-                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value)) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since"))
+                                // Retrive Cache-Control header
+                                CacheControlHeaderValue cacheControl = new CacheControlHeaderValue();
+                                try
                                 {
+                                    HttpHeader header = e.HttpClient.Request.Headers.GetFirstHeader("Cache-Control");
+                                    if (header != null) cacheControl = CacheControlHeaderValue.Parse(header.Value);
+                                }
+                                catch
+                                {
+                                    await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                                }
+                                // Respect cache control headers
+                                bool canCache = true;
+                                string readableMessage = " by ";
+                                if (cacheControl.NoCache || cacheControl.NoStore || cacheControl.MaxAge.HasValue)
+                                {
+                                    
+                                    // No-Cache
+                                    if (cacheControl.NoCache)
+                                    {
+                                        canCache = false;
+                                        readableMessage += "(No-Cache) request";
+                                    }
+                                    // Max-Age
+                                    if (cacheControl.MaxAge.HasValue)
+                                    {
+                                        if (cacheControl.MaxAge.Value.TotalSeconds == 0) canCache = false;
+                                        readableMessage += "(Max-Age=0) request";
+                                    }
+                                }
+
+                                // If resource has expired or client sent a revalidation request
+                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value)) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since") || !canCache)
+                                {
+                                    if (readableMessage == " by ") readableMessage += "response header";
                                     // If object has expired, then delete cached headers and revalidate against server
                                     deDupe.DeleteObject(e.HttpClient.Request.Url + "Headers");
                                     if (!e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since")) e.HttpClient.Request.Headers.AddHeader("If-Modified-Since", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                    await WriteToConsole("<Titanium> object expired URI:" + e.HttpClient.Request.Url, ConsoleColor.Green);
+                                    await WriteToConsole("<Titanium> object expired" + readableMessage +  ", URI:" + e.HttpClient.Request.Url, ConsoleColor.Green);
                                 }
                                 // Otherwise attempt to replay from cache
-                                else
+                                else if (canCache)
                                 {
 
                                     // Check matching body exists and retrive
