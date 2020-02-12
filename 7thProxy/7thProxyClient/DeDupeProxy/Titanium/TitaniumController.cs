@@ -148,7 +148,7 @@ namespace NKLI.DeDupeProxy
             if (!Directory.Exists("crts")) Directory.CreateDirectory("crts");
 
 
-            proxyServer.EnableHttp2 = true;
+            proxyServer.EnableHttp2 = false; // Disabled as limited support prevents required header modifications
 
             // generate root certificate without storing it in file system
             //proxyServer.CertificateManager.CreateRootCertificate(false);
@@ -179,6 +179,8 @@ namespace NKLI.DeDupeProxy
             proxyServer.ConnectionTimeOutSeconds = 15;
             proxyServer.ReuseSocket = true;
             proxyServer.EnableConnectionPool = true;
+            proxyServer.Enable100ContinueBehaviour = false; // Disabled as may caused problems on broken servers
+            proxyServer.EnableTcpServerConnectionPrefetch = true;
             proxyServer.ForwardToUpstreamGateway = true;
             //proxyServer.ProxyBasicAuthenticateFunc = async (args, userName, password) =>
             //{
@@ -280,7 +282,8 @@ namespace NKLI.DeDupeProxy
             } );*/
 
             // THREAD - Deduplication queue
-            var threadDeDupe = new Thread(async () => {
+            var threadDeDupe = new Thread(async () =>
+            {
                 while (true)
                 {
                     while (chunkLock > 0)
@@ -395,7 +398,7 @@ namespace NKLI.DeDupeProxy
             // SOCKS proxy
             if (useSocksRelay)
             {
-                proxyServer.UpStreamHttpProxy = new ExternalProxy ("127.0.0.1", socksProxyPort)
+                proxyServer.UpStreamHttpProxy = new ExternalProxy("127.0.0.1", socksProxyPort)
                 { ProxyType = ExternalProxyType.Socks5, UserName = "User1", Password = "Pass" };
                 proxyServer.UpStreamHttpsProxy = new ExternalProxy("127.0.0.1", socksProxyPort)
                 { ProxyType = ExternalProxyType.Socks5, UserName = "User1", Password = "Pass" };
@@ -409,6 +412,8 @@ namespace NKLI.DeDupeProxy
                 System.Security.Authentication.SslProtocols.Tls11 |
                 System.Security.Authentication.SslProtocols.Tls12 |
                 System.Security.Authentication.SslProtocols.Tls13;*/
+            proxyServer.SupportedSslProtocols = System.Security.Authentication.SslProtocols.None;
+
 
             // For speed
             proxyServer.CheckCertificateRevocation = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
@@ -651,13 +656,15 @@ namespace NKLI.DeDupeProxy
                                     await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
                                 }
 
-                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value)))
+                                // If resource has expired or client sent a revalidation request
+                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value)) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since"))
                                 {
                                     // If object has expired, then delete cached headers and revalidate against server
                                     deDupe.DeleteObject(e.HttpClient.Request.Url + "Headers");
                                     if (!e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since")) e.HttpClient.Request.Headers.AddHeader("If-Modified-Since", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
                                     await WriteToConsole("<Titanium> object expired URI:" + e.HttpClient.Request.Url, ConsoleColor.Green);
                                 }
+                                // Otherwise attempt to replay from cache
                                 else
                                 {
 
