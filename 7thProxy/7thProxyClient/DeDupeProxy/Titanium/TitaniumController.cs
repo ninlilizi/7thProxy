@@ -690,7 +690,7 @@ namespace NKLI.DeDupeProxy
                                 }
 
                                 // If resource has expired or client sent a revalidation request
-                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value)) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since") || !canCache)
+                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), DateTime.Now) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since") || !canCache)
                                 {
                                     if (readableMessage == " by ") readableMessage += "response header";
                                     // If object has expired, then delete cached headers and revalidate against server
@@ -907,9 +907,41 @@ namespace NKLI.DeDupeProxy
                             // Max-Age
                             if (cacheControl.MaxAge.HasValue)
                             {
-                                readableMessage += "(Max-Age) ";
-                                if (!e.HttpClient.Response.Headers.HeaderExists("Expires")) // Nin TODO - Test to ensure expirey whichever comes first if both exist
-                                    e.HttpClient.Response.Headers.AddHeader("Expires", DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                readableMessage += "(Max-Age=" + String.Format("{0:n0}", cacheControl.MaxAge.Value.TotalSeconds) + ", ";
+
+                                // Get DateTime indicated by Max-Age
+                                DateTime maxAgeDateTime = DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime();
+
+                                if (e.HttpClient.Response.Headers.HeaderExists("Expires"))
+                                {
+                                    // Get Expires header
+                                    HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToLongDateString() + " 00:00:00 GMT");
+                                    try
+                                    {
+                                        HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
+                                        if (header != null) cacheExpires = header;
+                                    }
+                                    catch
+                                    {
+                                        await WriteToConsole("<Titanium> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                                    }
+
+                                    // If Max-Age arrives before existing Expires header
+                                    if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), maxAgeDateTime))
+                                    {
+                                        // Replace Expires with Max-Age derived timestape
+                                        e.HttpClient.Response.Headers.RemoveHeader("Expires");
+                                        e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                        readableMessage += "Policy: Max-Age) ";
+                                    }
+                                    else readableMessage += "Policy: Expires) ";
+                                }
+                                // If Expires doesn't exist then add from MaxAge timestamp
+                                else
+                                {
+                                    e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                    readableMessage += "Policy: Max-Age) ";
+                                }
                             }
 
                             await WriteToConsole("<Titanium> Respecting " + readableMessage + "header for key:" + Key, ConsoleColor.DarkYellow);
@@ -1314,9 +1346,10 @@ namespace NKLI.DeDupeProxy
             return System.Text.Encoding.ASCII.GetBytes(str);
         }
 
-        public static bool IsExpired(this DateTime specificDate)
+        // specificDate is the comparison, targetDate is the one your testing to be before
+        public static bool IsExpired(this DateTime specificDate, DateTime targetDate)
         {
-            return specificDate < DateTime.Now;
+            return specificDate < targetDate;
         }
 
         public static string FormatSize(long size)
