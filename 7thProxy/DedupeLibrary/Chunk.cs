@@ -10,6 +10,7 @@ namespace WatsonDedupe
     /// <summary>
     /// Represents a chunk of data identified during deduplication.
     /// </summary>
+    [Serializable]
     public class Chunk
     {
         #region Public-Members

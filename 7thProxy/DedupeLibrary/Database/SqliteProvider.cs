@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Data.SQLite;
+using Caching;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace WatsonDedupe.Database
 {
@@ -25,6 +27,8 @@ namespace WatsonDedupe.Database
         private readonly object _ConfigLock = new object();
         private readonly object _ChunkRefcountLock = new object();
         private readonly object _ObjectLock = new object();
+
+        LRUCache<string, byte[]> memoryCacheObjectKey;
 
         #endregion
 
@@ -49,6 +53,9 @@ namespace WatsonDedupe.Database
             CreateConfigTable();
             CreateObjectMapTable();
             CreateChunkRefcountTable();
+
+            // Memory caches
+            memoryCacheObjectKey = new LRUCache<string, byte[]>(10000, 100, false);
         }
 
         #endregion
@@ -170,6 +177,10 @@ namespace WatsonDedupe.Database
 
             name = DedupeCommon.SanitizeString(name);
 
+            // If Key exists in cache then exit early
+            if (memoryCacheObjectKey.Contains(name)) return true;
+
+            // Otherwise read the database
             string query = "SELECT * FROM ObjectMap WHERE Name = '" + name + "' LIMIT 1";
             DataTable result;
 
@@ -177,7 +188,13 @@ namespace WatsonDedupe.Database
             {
                 if (Query(query, out result))
                 {
-                    if (result != null && result.Rows.Count > 0) return true;
+                    if (result != null && result.Rows.Count > 0)
+                    {
+                        // Add key to memory cache if found
+                        GetObjectChunks(name, out List<Chunk> chunks);
+
+                        return true;
+                    }
                 }
             }
 
@@ -287,6 +304,9 @@ namespace WatsonDedupe.Database
                 }
             }
 
+            // Add to memory cache
+            memoryCacheObjectKey.AddReplace(name, ListChunkToBytes(chunks));
+
             return true;
         }
 
@@ -331,6 +351,14 @@ namespace WatsonDedupe.Database
             name = DedupeCommon.SanitizeString(name);
             chunks = new List<Chunk>();
 
+            // If Key exists in cache then exit early
+            if (memoryCacheObjectKey.TryGet(name, out byte[] chunkList))
+            {
+                chunks = BytesToListChunk(chunkList);
+                return true;
+            }
+
+            // Otherwise fetch from database
             string query = "SELECT * FROM ObjectMap WHERE Name = '" + name + "'";
             DataTable result;
             bool success = false;
@@ -346,6 +374,9 @@ namespace WatsonDedupe.Database
             {
                 chunks.Add(Chunk.FromDataRow(row));
             }
+
+            // Add to memory cache
+            memoryCacheObjectKey.AddReplace(name, ListChunkToBytes(chunks));
 
             return true;
         }
@@ -442,6 +473,9 @@ namespace WatsonDedupe.Database
             if (String.IsNullOrEmpty(name)) throw new ArgumentNullException(nameof(name));
 
             name = DedupeCommon.SanitizeString(name);
+
+            // Remove from cache if cached
+            if (memoryCacheObjectKey.Contains(name)) memoryCacheObjectKey.Remove(name);
 
             string selectQuery = "SELECT * FROM ObjectMap WHERE Name = '" + name + "'";
             string deleteObjectMapQuery = "DELETE FROM ObjectMap WHERE Name = '" + name + "'";
@@ -607,8 +641,10 @@ namespace WatsonDedupe.Database
         /// <param name="dedupeRatioX">Deduplication ratio represented as a multiplier.</param>
         /// <param name="dedupeRatioPercent">Deduplication ratio represented as a percentage.</param>
         /// <returns>True if successful.</returns>
-        public override bool IndexStats(out ulong numObjects, out ulong numChunks, out ulong logicalBytes, out ulong physicalBytes, out decimal dedupeRatioX, out decimal dedupeRatioPercent)
+        public override bool IndexStats(out ulong numObjects, out int cachedObjects, out ulong numChunks, out ulong logicalBytes, out ulong physicalBytes, out decimal dedupeRatioX, out decimal dedupeRatioPercent)
         {
+            cachedObjects = memoryCacheObjectKey.Count();
+
             numObjects = 0;
             numChunks = 0;
             logicalBytes = 0;
@@ -886,6 +922,27 @@ namespace WatsonDedupe.Database
             return ret;
         }
 
+        #endregion
+
+        #region List serialization
+        public byte[] ListChunkToBytes(List<Chunk> obj)
+        {
+            using (MemoryStream ms = new MemoryStream())
+            {
+                new BinaryFormatter().Serialize(ms, obj);
+                return ms.ToArray();
+            }
+        }
+
+        public List<Chunk> BytesToListChunk(byte[] bytes)
+        {
+            using (MemoryStream ms = new MemoryStream(bytes, 0, bytes.Length))
+            {
+                ms.Write(bytes, 0, bytes.Length);
+                ms.Position = 0;
+                return new BinaryFormatter().Deserialize(ms) as List<Chunk>;
+            }
+        }
         #endregion
     }
 }

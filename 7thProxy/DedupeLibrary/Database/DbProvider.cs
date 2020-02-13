@@ -136,7 +136,7 @@ namespace WatsonDedupe.Database
         /// <param name="dedupeRatioX">Deduplication ratio represented as a multiplier.</param>
         /// <param name="dedupeRatioPercent">Deduplication ratio represented as a percentage.</param>
         /// <returns>True if successful.</returns>
-        public abstract bool IndexStats(out ulong numObjects, out ulong numChunks, out ulong logicalBytes, out ulong physicalBytes, out decimal dedupeRatioX, out decimal dedupeRatioPercent);
+        public abstract bool IndexStats(out ulong numObjects, out int cachedObjects, out ulong numChunks, out ulong logicalBytes, out ulong physicalBytes, out decimal dedupeRatioX, out decimal dedupeRatioPercent);
 
         /// <summary>
         /// Backup the deduplication database, not including chunk data, to another file.

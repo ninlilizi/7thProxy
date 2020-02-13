@@ -235,9 +235,9 @@ namespace NKLI.DeDupeProxy
             Console.Write(Environment.NewLine + "-------------------------" + Environment.NewLine + "DeDupe Engine Initialized" + Environment.NewLine + "-------------------------" + Environment.NewLine);
             
             // Gather index and dedupe stats
-            if (deDupe.IndexStats(out NumObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
+            if (deDupe.IndexStats(out NumObjects, out int cachedObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
             {
-                Console.WriteLine("  [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]");
+                Console.WriteLine("  [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] [CachedKeys: " + cachedObjects  + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]");
                 //Console.WriteLine("  Dedupe ratio     : " + DedupeRatioX + "X, " + DedupeRatioPercent + "%");
                 Console.WriteLine("-------------------------");
             }
@@ -299,8 +299,8 @@ namespace NKLI.DeDupeProxy
 
                                     deDupe.StoreOrReplaceObject("Headers_" + chunkStruct.URI, chunkStruct.Headers, out Chunks, "Headers_");
 
-                                    if (deDupe.IndexStats(out NumObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
-                                        await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
+                                    if (deDupe.IndexStats(out NumObjects, out int cachedObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
+                                        await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] [CachedKeys: " + cachedObjects + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
                                 }
                                 catch (Exception ex)
                                 {
@@ -588,7 +588,7 @@ namespace NKLI.DeDupeProxy
             string key = e.HttpClient.Request.Url;
 
             // Special handling for netflix
-            key = TitaniumHelper.NetflixKeyMorph(key);
+            TitaniumHelper.NetflixKeyMorph(key, out key, out ulong start, out ulong end);
 
             // We only attempt to replay from cache if cached headers also exist.
             if (deDupe.ObjectExists("Headers_" + key))
@@ -837,7 +837,7 @@ namespace NKLI.DeDupeProxy
                 try
                 {
                     // Special handling for netflix
-                    key = TitaniumHelper.NetflixKeyMorph(key);
+                    TitaniumHelper.NetflixKeyMorph(key, out key, out ulong start, out ulong end);
 
                     bool bodyValidated = false;
                     bool bodyRetrieved = false;
@@ -1512,9 +1512,12 @@ namespace NKLI.DeDupeProxy
         #endregion
 
         // Special handling for netflix
-        public static string NetflixKeyMorph(string key)
+        public static bool NetflixKeyMorph(string key, out string outKey, out ulong start, out ulong end)
         {
-            
+            // Initialise outputs
+            start = 0;
+            end = 0;
+
             if (key.Contains("oca.nflxvideo.net"))
             {
                 //await WriteToConsole("NETFLIX Request, Special handling old key: " + Key, ConsoleColor.DarkGray);
@@ -1526,11 +1529,35 @@ namespace NKLI.DeDupeProxy
 
                 // Remove everything before this as denotes global CDN
                 // locations and not the actual content
-                key = protocolPrefix + key.Substring(key.IndexOf("oca.nflxvideo.net"));
+                outKey = protocolPrefix + key.Substring(key.IndexOf("oca.nflxvideo.net"));
 
-                //Console.WriteLine("NETFLIX Request, Special handling new key: " + Key, ConsoleColor.DarkGray);
+                // Get range request
+                int offset = key.IndexOf("/range/") + 7;
+                string rangeString = key.Substring(offset, key.IndexOf("?", offset) - offset);
+
+                int divideIndex = rangeString.IndexOf("-");
+                string rangeStart = rangeString.Substring(0, divideIndex);
+                string rangeEnd = rangeString.Substring(divideIndex + 1);
+
+                // Attempt to parse to ulong
+                if (!UInt64.TryParse(rangeStart, out start)) return false;
+                if (!UInt64.TryParse(rangeEnd, out end)) return false;
+
+                // Final sanity check
+                if (start > end) return false;
+
+                // Dev debugging
+                Console.WriteLine("");
+                Console.WriteLine("NETFLIX Request, Special handling new key: " + key, ConsoleColor.DarkGray);
+                Console.WriteLine("NETFLIX Range request [" + start + "] [rangeStart:" + end + "] [rangeLength:" + rangeEnd + "]");
+
+                return true;
             }
-            return key;
+            else
+            {
+                outKey = key;
+                return false;
+            }
         }
     }
 
