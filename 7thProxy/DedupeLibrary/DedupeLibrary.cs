@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using SlidingWindow;
@@ -257,8 +258,9 @@ namespace WatsonDedupe
         /// <param name="objectName">The name of the object.  Must be unique in the index.</param>
         /// <param name="data">The byte data for the object.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreObject(string objectName, byte[] data, out List<Chunk> chunks)
+        public bool StoreObject(string objectName, byte[] data, out List<Chunk> chunks, string writeChunkPrefix)
         {
             //if (data == null || data.Length < 1) throw new ArgumentNullException(nameof(data));
             if (data == null || data.Length < 1)
@@ -266,7 +268,7 @@ namespace WatsonDedupe
                 chunks = new List<Chunk>();
                 return false;
             }
-            return StoreObject(objectName, Callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks);
+            return StoreObject(objectName, Callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks, writeChunkPrefix);
         }
 
         /// <summary>
@@ -276,10 +278,11 @@ namespace WatsonDedupe
         /// <param name="contentLength">The length of the data.</param>
         /// <param name="stream">The stream containing the data.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreObject(string objectName, long contentLength, Stream stream, out List<Chunk> chunks)
+        public bool StoreObject(string objectName, long contentLength, Stream stream, out List<Chunk> chunks, string writeChunkPrefix)
         {
-            return StoreObject(objectName, Callbacks, contentLength, stream, out chunks);
+            return StoreObject(objectName, Callbacks, contentLength, stream, out chunks, writeChunkPrefix);
         }
 
         /// <summary>
@@ -290,11 +293,12 @@ namespace WatsonDedupe
         /// <param name="callbacks">CallbackMethods object containing callback methods.</param>
         /// <param name="data">The byte data for the object.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreObject(string objectName, CallbackMethods callbacks, byte[] data, out List<Chunk> chunks)
+        public bool StoreObject(string objectName, CallbackMethods callbacks, byte[] data, out List<Chunk> chunks, string writeChunkPrefix)
         {
             if (data == null || data.Length < 1) throw new ArgumentNullException(nameof(data));
-            return StoreObject(objectName, callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks);
+            return StoreObject(objectName, callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks, writeChunkPrefix);
         }
 
         /// <summary>
@@ -306,8 +310,9 @@ namespace WatsonDedupe
         /// <param name="contentLength">The length of the data.</param>
         /// <param name="stream">The stream containing the data.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreObject(string objectName, CallbackMethods callbacks, long contentLength, Stream stream, out List<Chunk> chunks)
+        public bool StoreObject(string objectName, CallbackMethods callbacks, long contentLength, Stream stream, out List<Chunk> chunks, string writeChunkPrefix)
         {
             #region Initialize
 
@@ -359,7 +364,7 @@ namespace WatsonDedupe
                     return true;
                 };
 
-                if (!ChunkStream(contentLength, stream, processChunk, out chunks))
+                if (!ChunkStream(contentLength, stream, processChunk, out chunks, writeChunkPrefix))
                 {
                     Log("Unable to chunk object " + objectName);
                     garbageCollectionRequired = true;
@@ -397,11 +402,12 @@ namespace WatsonDedupe
         /// <param name="objectName">The name of the object.  Must be unique in the index.</param>
         /// <param name="data">The byte data for the object.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreOrReplaceObject(string objectName, byte[] data, out List<Chunk> chunks)
+        public bool StoreOrReplaceObject(string objectName, byte[] data, out List<Chunk> chunks, string writeChunkPrefix)
         {
             if (data == null || data.Length < 1) throw new ArgumentNullException(nameof(data));
-            return StoreOrReplaceObject(objectName, Callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks);
+            return StoreOrReplaceObject(objectName, Callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks, writeChunkPrefix);
         }
 
         /// <summary>
@@ -411,10 +417,11 @@ namespace WatsonDedupe
         /// <param name="contentLength">The length of the data.</param>
         /// <param name="stream">The stream containing the data.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreOrReplaceObject(string objectName, long contentLength, Stream stream, out List<Chunk> chunks)
+        public bool StoreOrReplaceObject(string objectName, long contentLength, Stream stream, out List<Chunk> chunks, string writeChunkPrefix)
         {
-            return StoreOrReplaceObject(objectName, Callbacks, contentLength, stream, out chunks);
+            return StoreOrReplaceObject(objectName, Callbacks, contentLength, stream, out chunks, writeChunkPrefix);
         }
 
         /// <summary>
@@ -425,11 +432,31 @@ namespace WatsonDedupe
         /// <param name="callbacks">CallbackMethods object containing callback methods.</param>
         /// <param name="data">The byte data for the object.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreOrReplaceObject(string objectName, CallbackMethods callbacks, byte[] data, out List<Chunk> chunks)
+        public bool StoreOrReplaceObject(string objectName, CallbackMethods callbacks, byte[] data, out List<Chunk> chunks, string writeChunkPrefix)
         {
             if (data == null || data.Length < 1) throw new ArgumentNullException(nameof(data));
-            return StoreOrReplaceObject(objectName, callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks); 
+
+
+            #region Compare
+            if (_Database.ObjectExists(objectName))
+            {
+                _Database.GetObjectChunks(objectName, out chunks);
+                if (RetrieveObject(objectName, out byte[] cachedData))
+                {
+                    
+                    if (ByteArrayCompare(cachedData, data))
+                    {
+                        Log("Object " + objectName + " revalidated, not replacing");
+                        return true;
+                    }
+                }
+            }
+            #endregion
+
+
+            return StoreOrReplaceObject(objectName, callbacks, data.Length, DedupeCommon.BytesToStream(data), out chunks, writeChunkPrefix); 
         }
 
         /// <summary>
@@ -441,8 +468,9 @@ namespace WatsonDedupe
         /// <param name="contentLength">The length of the data.</param>
         /// <param name="stream">The stream containing the data.</param>
         /// <param name="chunks">The list of chunks identified during the deduplication operation.</param>
+        /// <param name="writeChunkPrefix">Prefix to prepend to chunk Key</param>
         /// <returns>True if successful.</returns>
-        public bool StoreOrReplaceObject(string objectName, CallbackMethods callbacks, long contentLength, Stream stream, out List<Chunk> chunks)
+        public bool StoreOrReplaceObject(string objectName, CallbackMethods callbacks, long contentLength, Stream stream, out List<Chunk> chunks, string writeChunkPrefix)
         {
             #region Initialize
 
@@ -475,7 +503,7 @@ namespace WatsonDedupe
 
             #endregion
 
-            return StoreObject(objectName, callbacks, contentLength, stream, out chunks); 
+            return StoreObject(objectName, callbacks, contentLength, stream, out chunks, writeChunkPrefix); 
         }
 
         /// <summary>
@@ -831,7 +859,7 @@ namespace WatsonDedupe
             _Database.AddConfigData("index_per_object", "false");
         }
          
-        private bool ChunkStream(long contentLength, Stream stream, Func<Chunk, bool> processChunk, out List<Chunk> chunks)
+        private bool ChunkStream(long contentLength, Stream stream, Func<Chunk, bool> processChunk, out List<Chunk> chunks, string writeChunkPrefix)
         {
             #region Initialize
 
@@ -849,7 +877,7 @@ namespace WatsonDedupe
             if (contentLength <= _MinChunkSize)
             {
                 byte[] chunkData = DedupeCommon.ReadBytesFromStream(stream, contentLength, out bytesRead);
-                key = DedupeCommon.BytesToBase64(DedupeCommon.Sha256(chunkData));
+                key = writeChunkPrefix + DedupeCommon.BytesToBase64(DedupeCommon.Sha256(chunkData));
                 chunk = new Chunk(
                     key,
                     contentLength,
@@ -894,7 +922,7 @@ namespace WatsonDedupe
                 {
                     #region Chunk-Boundary
                      
-                    key = DedupeCommon.BytesToBase64(DedupeCommon.Sha256(currChunk));
+                    key = writeChunkPrefix + DedupeCommon.BytesToBase64(DedupeCommon.Sha256(currChunk));
                     chunk = new Chunk(
                         key,
                         currChunk.Length,
@@ -924,7 +952,7 @@ namespace WatsonDedupe
 
                     if (currChunk != null)
                     {
-                        key = DedupeCommon.BytesToBase64(DedupeCommon.Sha256(currChunk));
+                        key = writeChunkPrefix + DedupeCommon.BytesToBase64(DedupeCommon.Sha256(currChunk));
                         chunk = new Chunk(
                             key,
                             currChunk.Length,
@@ -949,6 +977,18 @@ namespace WatsonDedupe
 
             return true; 
         }
+
+        #region UNSAFE byte[] comparison - Let's do it fast
+        [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+        static extern int memcmp(byte[] b1, byte[] b2, long count);
+
+        static bool ByteArrayCompare(byte[] b1, byte[] b2)
+        {
+            // Validate buffers are the same length.
+            // This also ensures that the count does not exceed the length of either buffer.  
+            return b1.Length == b2.Length && memcmp(b1, b2, b1.Length) == 0;
+        }
+        #endregion
 
         private void Log(string msg)
         {
