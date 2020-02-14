@@ -1549,7 +1549,7 @@ namespace NKLI.DeDupeProxy
                 // Dev debugging
                 Console.WriteLine("");
                 Console.WriteLine("NETFLIX Request, Special handling new key: " + key, ConsoleColor.DarkGray);
-                Console.WriteLine("NETFLIX Range request [" + start + "] [rangeStart:" + end + "] [rangeLength:" + rangeEnd + "]");
+                Console.WriteLine("NETFLIX Range request [rangeStart" + start + "] [rangeEnd:" + end + "] [rangeLength:" + rangeEnd + "]");
 
                 return true;
             }

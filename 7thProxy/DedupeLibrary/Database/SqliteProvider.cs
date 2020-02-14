@@ -28,6 +28,7 @@ namespace WatsonDedupe.Database
         private readonly object _ChunkRefcountLock = new object();
         private readonly object _ObjectLock = new object();
 
+        List<String> memoryCacheObjectList = new List<string>();
         LRUCache<string, byte[]> memoryCacheObjectKey;
 
         #endregion
@@ -55,7 +56,12 @@ namespace WatsonDedupe.Database
             CreateChunkRefcountTable();
 
             // Memory caches
-            memoryCacheObjectKey = new LRUCache<string, byte[]>(10000, 100, false);
+            memoryCacheObjectKey = new LRUCache<string, byte[]>(100, 10, false);
+
+            // Load key index into list
+            ListObjects(out List<string> testList);
+            memoryCacheObjectList = testList;
+            Console.WriteLine("<DeDupe> (SQLiteProvider) " + testList.Count() + " Keys loaded from database");
         }
 
         #endregion
@@ -178,7 +184,8 @@ namespace WatsonDedupe.Database
             name = DedupeCommon.SanitizeString(name);
 
             // If Key exists in cache then exit early
-            if (memoryCacheObjectKey.Contains(name)) return true;
+            if (memoryCacheObjectList.Contains(name)) return true;
+            else return false;
 
             // Otherwise read the database
             string query = "SELECT * FROM ObjectMap WHERE Name = '" + name + "' LIMIT 1";
@@ -192,6 +199,7 @@ namespace WatsonDedupe.Database
                     {
                         // Add key to memory cache if found
                         GetObjectChunks(name, out List<Chunk> chunks);
+                        memoryCacheObjectList.Add(name);
 
                         return true;
                     }
@@ -260,6 +268,9 @@ namespace WatsonDedupe.Database
                 }
             }
 
+            // Add to Object list if missing
+            if (!memoryCacheObjectList.Contains(name)) memoryCacheObjectList.Add(name);
+
             return true;
         }
 
@@ -304,8 +315,11 @@ namespace WatsonDedupe.Database
                 }
             }
 
-            // Add to memory cache
-            memoryCacheObjectKey.AddReplace(name, ListChunkToBytes(chunks));
+            // Add to Object list if missing
+            if (!memoryCacheObjectList.Contains(name)) memoryCacheObjectList.Add(name);
+
+            // Add to Index
+            memoryCacheObjectList.Add(name);
 
             return true;
         }
@@ -335,6 +349,7 @@ namespace WatsonDedupe.Database
             if (!success) return false;
 
             metadata = ObjectMetadata.FromDataTable(result);
+
             return true;
         }
 
@@ -351,12 +366,16 @@ namespace WatsonDedupe.Database
             name = DedupeCommon.SanitizeString(name);
             chunks = new List<Chunk>();
 
-            // If Key exists in cache then exit early
+            // If Key doesn't exists in db then exit early
+            if (!memoryCacheObjectList.Contains(name)) return false;
+
+            // If key exists in cache then exit early
             if (memoryCacheObjectKey.TryGet(name, out byte[] chunkList))
             {
                 chunks = BytesToListChunk(chunkList);
                 return true;
             }
+
 
             // Otherwise fetch from database
             string query = "SELECT * FROM ObjectMap WHERE Name = '" + name + "'";
@@ -424,6 +443,7 @@ namespace WatsonDedupe.Database
             }
 
             chunks = chunks.OrderBy(c => c.Address).ToList();
+
             return true;
         }
 
@@ -459,6 +479,7 @@ namespace WatsonDedupe.Database
             if (!success) return false;
 
             chunk = Chunk.FromDataRow(result.Rows[0]);
+
             return true;
         }
 
@@ -475,6 +496,7 @@ namespace WatsonDedupe.Database
             name = DedupeCommon.SanitizeString(name);
 
             // Remove from cache if cached
+            if (memoryCacheObjectList.Contains(name)) memoryCacheObjectList.Remove(name);
             if (memoryCacheObjectKey.Contains(name)) memoryCacheObjectKey.Remove(name);
 
             string selectQuery = "SELECT * FROM ObjectMap WHERE Name = '" + name + "'";
