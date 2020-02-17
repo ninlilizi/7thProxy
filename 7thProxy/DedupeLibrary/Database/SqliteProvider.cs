@@ -60,7 +60,11 @@ namespace WatsonDedupe.Database
 
             // Load key index into list
             ListObjects(out List<string> testList);
-            memoryCacheObjectList = testList;
+
+            // Detect erroenous duplicates
+            memoryCacheObjectList = new HashSet<string>(testList).ToList();
+            if (memoryCacheObjectList.Count() != testList.Count()) Console.WriteLine("<DeDupe> ERROR: Duplicate Unique Keys found in database!");
+
             Console.WriteLine("<DeDupe> (SQLiteProvider) " + testList.Count() + " Keys loaded from database");
         }
 
@@ -101,12 +105,12 @@ namespace WatsonDedupe.Database
 
             lock (_ConfigLock)
             {
-                if (Query(keyCheckQuery, out keyCheckResult))
+                if (Query(keyCheckQuery, out keyCheckResult, false))
                 {
-                    Query(keyDeleteQuery, out keyDeleteResult);
+                    Query(keyDeleteQuery, out keyDeleteResult, false);
                 }
 
-                Query(keyInsertQuery, out keyInsertResult);
+                Query(keyInsertQuery, out keyInsertResult, false);
             }
 
             return;
@@ -130,7 +134,7 @@ namespace WatsonDedupe.Database
 
             lock (_ConfigLock)
             {
-                if (Query(keyQuery, out result))
+                if (Query(keyQuery, out result, false))
                 {
                     if (result != null && result.Rows.Count > 0)
                     {
@@ -163,7 +167,7 @@ namespace WatsonDedupe.Database
 
             lock (_ObjectLock)
             {
-                if (Query(query, out result))
+                if (Query(query, out result, false))
                 {
                     if (result != null && result.Rows.Count > 0) return true;
                 }
@@ -193,7 +197,7 @@ namespace WatsonDedupe.Database
 
             lock (_ObjectLock)
             {
-                if (Query(query, out result))
+                if (Query(query, out result, false))
                 {
                     if (result != null && result.Rows.Count > 0)
                     {
@@ -222,7 +226,7 @@ namespace WatsonDedupe.Database
 
             lock (_ObjectLock)
             {
-                if (Query(query, out result))
+                if (Query(query, out result, true))
                 {
                     if (result != null && result.Rows.Count > 0)
                     {
@@ -231,6 +235,10 @@ namespace WatsonDedupe.Database
                             names.Add(curr["Name"].ToString());
                         }
                     }
+                }
+                else
+                {
+                    Console.WriteLine("Query failed");
                 }
             }
         }
@@ -255,7 +263,7 @@ namespace WatsonDedupe.Database
 
             lock (_ObjectLock)
             {
-                if (!Query(query, out result))
+                if (!Query(query, out result, false))
                 {
                     if (_Debug) Console.WriteLine("Insert query failed: " + query);
                     return false;
@@ -298,7 +306,7 @@ namespace WatsonDedupe.Database
             {
                 foreach (string query in addObjectChunksQueries)
                 {
-                    if (!Query(query, out result))
+                    if (!Query(query, out result, false))
                     {
                         if (_Debug) Console.WriteLine("Insert query failed: " + query);
                         return false;
@@ -342,7 +350,7 @@ namespace WatsonDedupe.Database
             bool success = false;
             lock (_ObjectLock)
             {
-                success = Query(query, out result);
+                success = Query(query, out result, false);
             }
 
             if (result == null || result.Rows.Count < 1) return false;
@@ -383,7 +391,7 @@ namespace WatsonDedupe.Database
             bool success = false;
             lock (_ObjectLock)
             {
-                success = Query(query, out result);
+                success = Query(query, out result, false);
             }
 
             if (result == null || result.Rows.Count < 1) return false;
@@ -431,7 +439,7 @@ namespace WatsonDedupe.Database
             bool success = false;
             lock (_ObjectLock)
             {
-                success = Query(query, out result);
+                success = Query(query, out result, false);
             }
 
             if (result == null || result.Rows.Count < 1) return false;
@@ -472,7 +480,7 @@ namespace WatsonDedupe.Database
             bool success = false;
             lock (_ObjectLock)
             {
-                success = Query(query, out result);
+                success = Query(query, out result, false);
             }
 
             if (result == null || result.Rows.Count < 1) return false;
@@ -506,7 +514,7 @@ namespace WatsonDedupe.Database
 
             lock (_ObjectLock)
             {
-                if (!Query(selectQuery, out result))
+                if (!Query(selectQuery, out result, false))
                 {
                     if (_Debug)
                     {
@@ -523,7 +531,7 @@ namespace WatsonDedupe.Database
                     if (garbageCollect) garbageCollectChunks.Add(c.Key);
                 }
 
-                if (!Query(deleteObjectMapQuery, out result))
+                if (!Query(deleteObjectMapQuery, out result, false))
                 {
                     if (_Debug)
                     {
@@ -558,13 +566,13 @@ namespace WatsonDedupe.Database
 
             lock (_ChunkRefcountLock)
             {
-                if (Query(selectQuery, out selectResult))
+                if (Query(selectQuery, out selectResult, false))
                 {
                     if (selectResult == null || selectResult.Rows.Count < 1)
                     {
                         #region New-Entry
 
-                        return Query(insertQuery, out insertResult);
+                        return Query(insertQuery, out insertResult, false);
 
                         #endregion
                     }
@@ -581,7 +589,7 @@ namespace WatsonDedupe.Database
                         currCount++;
 
                         updateQuery = "UPDATE ChunkRefcount SET RefCount = '" + currCount + "' WHERE ChunkKey = '" + key + "'";
-                        return Query(updateQuery, out updateResult);
+                        return Query(updateQuery, out updateResult, false);
 
                         #endregion
                     }
@@ -619,7 +627,7 @@ namespace WatsonDedupe.Database
 
             lock (_ChunkRefcountLock)
             {
-                if (Query(selectQuery, out selectResult))
+                if (Query(selectQuery, out selectResult, false))
                 {
                     if (selectResult == null || selectResult.Rows.Count < 1)
                     {
@@ -637,12 +645,12 @@ namespace WatsonDedupe.Database
                         if (currCount == 0)
                         {
                             garbageCollect = true;
-                            return Query(deleteQuery, out deleteResult);
+                            return Query(deleteQuery, out deleteResult, false);
                         }
                         else
                         {
                             updateQuery = "UPDATE ChunkRefcount SET RefCount = '" + currCount + "' WHERE ChunkKey = '" + key + "'";
-                            return Query(updateQuery, out updateResult);
+                            return Query(updateQuery, out updateResult, false);
                         }
                     }
                 }
@@ -689,7 +697,7 @@ namespace WatsonDedupe.Database
 
             lock (_ChunkRefcountLock)
             {
-                if (!Query(query, out result))
+                if (!Query(query, out result, false))
                 {
                     if (_Debug) Console.WriteLine("Unable to retrieve index stats");
                     return false;
@@ -764,8 +772,8 @@ namespace WatsonDedupe.Database
             _SqliteConnection = new SQLiteConnection(_ConnectionString);
             _SqliteConnection.Open();
         }
-         
-        private bool Query(string query, out DataTable result)
+
+        private bool Query(string query, out DataTable result, bool errorRetry)
         {
             result = new DataTable();
 
@@ -782,8 +790,60 @@ namespace WatsonDedupe.Database
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                if (result != null)
+                {
+                    if (errorRetry)
+                    {
+                        Console.WriteLine("SQLite queury exception occured, attempting to retry without constraints.");
+
+                        if (String.IsNullOrEmpty(query)) return false;
+
+                        try
+                        {
+                            using (SQLiteCommand cmd = new SQLiteCommand(query, _SqliteConnection))
+                            {
+                                using (IDataReader reader = cmd.ExecuteReader())
+                                {
+                                    result.Clear();
+                                    using (DataSet ds = new DataSet() { EnforceConstraints = false })
+                                    {
+                                        ds.Tables.Add(result);
+                                        result.Load(reader, LoadOption.OverwriteChanges);
+                                        reader.Close();
+
+                                        foreach (DataRow dr in result.Rows)
+                                        {
+                                            if (dr.HasErrors)
+                                            {
+                                                Console.Write("Row ");
+                                                foreach (DataColumn dc in result.Columns)
+                                                    Console.Write(dc.ColumnName + ": '" + dr.ItemArray[dc.Ordinal] + "', ");
+                                                Console.WriteLine(" has error: " + dr.RowError);
+                                            }
+                                        }
+                                        ds.Dispose();
+                                    }
+                                    reader.Dispose();
+                                    cmd.Dispose();
+                                    return true;
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            Console.WriteLine("SQLite queury exception occured. Exception: ");
+                            Console.WriteLine(ex);
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("SQLite queury exception occured. Exception: ");
+                        Console.WriteLine(ex);
+                    }
+                }
+           
                 return false;
             }
             finally
