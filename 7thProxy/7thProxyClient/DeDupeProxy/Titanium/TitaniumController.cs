@@ -47,7 +47,7 @@ namespace NKLI.DeDupeProxy
 
         // Chunk encoding queue
         public static IPersistentQueue chunkQueue;
-        public ulong chunkLock = 0;
+        public bool chunkLock = false;
         public bool queueLock = false;
 
         struct ObjectStruct
@@ -104,6 +104,8 @@ namespace NKLI.DeDupeProxy
         //
 
         // Watson DeDupe
+        ulong indexChunkQueue = 0;
+        FIFOCache<ulong, byte[]> memoryJournalQueue;
         LRUCache<string, byte[]> memoryCacheBody;
         LRUCache<string, byte[]> memoryCacheHeaders;
 
@@ -212,6 +214,7 @@ namespace NKLI.DeDupeProxy
 
             //Watson Cache: 1600 entries * 262144 max chunk size = Max 400Mb memory size
             Console.WriteLine("<Cache> Max memory cache, " + TitaniumHelper.FormatSize(deDupeMaxChunkSize * deDupeMaxMemoryCacheItems));
+            memoryJournalQueue = new FIFOCache<ulong, byte[]>(10000, 100, false);
             memoryCacheBody = new LRUCache<string, byte[]>(deDupeMaxMemoryCacheItems, 100, false);
             memoryCacheHeaders = new LRUCache<string, byte[]>(deDupeMaxMemoryCacheItems, 100, false);
             //writeCache = new FIFOCache<string, byte[]>(1000, 100, false);
@@ -246,13 +249,53 @@ namespace NKLI.DeDupeProxy
 
         public void StartProxy(int listenPort, bool useSocksRelay, int socksProxyPort)
         {
+            // THREAD - journal queueing thread
+            var threadJournalQueue = new Thread(async () =>
+            {
+                while (true)
+                {
+                    // Wait till we have some work to do
+                    while (memoryJournalQueue.Count() == 0)
+                    { Thread.Sleep(100); }
+
+                    // Lock
+                    chunkLock = true;
+
+                    // Wait till unlocked
+                    while (queueLock)
+                    { Thread.Sleep(10); }
+
+                    // Open session
+                    IPersistentQueueSession sessionQueue = chunkQueue.OpenSession();
+
+                    while (memoryJournalQueue.Count() > 0)
+                    {
+                        // Get last in
+                        ulong index = memoryJournalQueue.Oldest();
+
+                        try { if (memoryJournalQueue.TryGet(index, out byte[] entry)) sessionQueue.Enqueue(entry); }
+                        catch (Exception ex) { await WriteToConsole("<Cache> Exception occured while appending chunk queue journal, exception:" + Environment.NewLine + ex, ConsoleColor.Red); }
+                        finally { memoryJournalQueue.Remove(index); }
+
+                    }
+                    // End session
+                    sessionQueue.Flush();
+
+                    // Unlock
+                    chunkLock = false;
+                }
+            });
+
             // THREAD - Deduplication queue
             var threadDeDupe = new Thread(async () =>
             {
                 while (true)
                 {
-                    while (chunkLock > 0)
+                    // Wait till unlocked
+                    while (chunkLock)
                     { Thread.Sleep(100); }
+
+                    // Lock
                     queueLock = true;
 
                     try
@@ -330,6 +373,10 @@ namespace NKLI.DeDupeProxy
             chunkQueue = new PersistentQueue("chunkQueue", DiskQueue.Implementation.Constants._32Megabytes, false);
             chunkQueue.Internals.TrimTransactionLogOnDispose = true;
             chunkQueue.Internals.ParanoidFlushing = false;
+
+            threadJournalQueue.Priority = ThreadPriority.BelowNormal;
+            threadJournalQueue.IsBackground = true;
+            threadJournalQueue.Start();
 
             threadDeDupe.Priority = ThreadPriority.Lowest;
             threadDeDupe.IsBackground = true;
@@ -410,7 +457,7 @@ namespace NKLI.DeDupeProxy
             }
 
             // Don't decrypt these domains
-            dontDecrypt = new List<string> { "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com" };
+            dontDecrypt = new List<string> { "local", "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com" };
             // Override Cache-Control policy headers for these domains
             overrideNoStoreNoCache = new List<string> { "nflxvideo.net" };
 
@@ -593,10 +640,6 @@ namespace NKLI.DeDupeProxy
             // We only attempt to replay from cache if cached headers also exist.
             if (deDupe.ObjectExists("Headers_" + key))
             {
-                chunkLock++;
-                while (queueLock)
-                { Thread.Sleep(10); }
-
                 try
                 {
                     bool deleteCache = false;
@@ -746,8 +789,6 @@ namespace NKLI.DeDupeProxy
                     }
                 }
                 catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to restore cached headers", ConsoleColor.Red); }
-
-                chunkLock = Math.Max(0, chunkLock - 1);
             }     
 
 
@@ -1036,9 +1077,13 @@ namespace NKLI.DeDupeProxy
                                         else responseStruct.PackStruct(key, mStream.ToArray(), new byte[0]);
                                         mStream.Dispose();
 
-                                        IPersistentQueueSession sessionQueue = chunkQueue.OpenSession();
-                                        sessionQueue.Enqueue(responseStruct.packed);
-                                        sessionQueue.Flush();
+                                        // Append to the journal queue
+                                        memoryJournalQueue.AddReplace(indexChunkQueue, responseStruct.packed);
+                                        
+                                        // Append unique key index
+                                        if (ulong.MaxValue == indexChunkQueue) indexChunkQueue = 0;
+                                        indexChunkQueue++;
+
                                     }
                                     catch (Exception ex)
                                     {
@@ -1108,10 +1153,19 @@ namespace NKLI.DeDupeProxy
         {
             e.GetState().PipelineInfo.AppendLine(nameof(OnCertificateValidation));
 
+            // access user data set in request to do something with it
+            //var userData = e.ClientUserData as CustomUserData;
+
             if (e.SslPolicyErrors == SslPolicyErrors.None)
             {
                 e.IsValid = true;
             }
+            else
+            {
+                WriteToConsole("Not encrypting due to SSL validation failure:" + e.SslPolicyErrors.ToString() + ", URI:" + e.Session.HttpClient.Request.Host, ConsoleColor.DarkRed);
+                dontDecrypt.Add(e.Session.HttpClient.Request.Host);
+            }
+
             return Task.CompletedTask;
         }
 
@@ -1155,11 +1209,7 @@ namespace NKLI.DeDupeProxy
         ///// </summary>
         public class CustomUserData
         {
-            public byte[] RequestBody { get; set; }
-            public byte[] ResponseBody { get; set; }
-            //public string RequestBodyString { get; set; }
-            public string RequestMethod { get; set; }
-            public int ResponsePosition { get; set; }
+            public bool certificateValid;
         }
 
         //
