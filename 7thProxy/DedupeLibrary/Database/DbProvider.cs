@@ -51,6 +51,13 @@ namespace WatsonDedupe.Database
         public abstract void ListObjects(out List<string> names);
 
         /// <summary>
+        /// List the objects that reference a chunk
+        /// </summary>
+        /// <param name="chunk">Chunk to find objects for</param>
+        /// <param name="names">List of object keys.</param>
+        public abstract void ListObjectsWithChunk(string chunk, out List<string> names);
+
+        /// <summary>
         /// Add a chunk for an object.
         /// </summary>
         /// <param name="name">Object name.</param>

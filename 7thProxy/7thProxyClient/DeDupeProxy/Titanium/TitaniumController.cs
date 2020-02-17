@@ -212,6 +212,9 @@ namespace NKLI.DeDupeProxy
             if (!Directory.Exists(chunkCacheDir.Name)) Directory.CreateDirectory(chunkCacheDir.Name);
             chunkCache = new DiskCache<string>(chunkCacheDir, chunkCachePolicy, chunkCacheMaxSize, chunkCachePollingInterval);
 
+            // Callback removes objects from DeDupe index if referenced chunk is removed from cache
+            chunkCache.EntryRemoved += ChunkRemoved;
+
             //Watson Cache: 1600 entries * 262144 max chunk size = Max 400Mb memory size
             Console.WriteLine("<Cache> Max memory cache, " + TitaniumHelper.FormatSize(deDupeMaxChunkSize * deDupeMaxMemoryCacheItems));
             memoryJournalQueue = new FIFOCache<ulong, byte[]>(10000, 100, false);
@@ -372,7 +375,7 @@ namespace NKLI.DeDupeProxy
             if (File.Exists("chunkQueue//lock")) DeleteChildren("chunkQueue", true);
             chunkQueue = new PersistentQueue("chunkQueue", DiskQueue.Implementation.Constants._32Megabytes, false);
             chunkQueue.Internals.TrimTransactionLogOnDispose = true;
-            chunkQueue.Internals.ParanoidFlushing = false;
+            chunkQueue.Internals.ParanoidFlushing = true;
 
             threadJournalQueue.Priority = ThreadPriority.BelowNormal;
             threadJournalQueue.IsBackground = true;
@@ -1202,6 +1205,21 @@ namespace NKLI.DeDupeProxy
             @lock.Release();
         }
 
+        // Callback to remove referenced objects after chunk eviction
+        public async void ChunkRemoved(object sender, ICacheEntry<string> cacheEntry)
+        {
+            // Get referenced objects
+            deDupe.ListObjectsWithChunk(cacheEntry.Key, out List<string> keys);
+
+            if (DebugDedupe) Console.WriteLine("Chunk evicted from cache, key:" + cacheEntry.Key + ", Listing objects with chunk, " + keys.Count() + " found");
+
+            // Attempts to delete objects from DeDupe database
+            foreach (string key in keys)
+            {
+                if (deDupe.DeleteObject(key)) if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "' triggered removal of referenced object, Key:" + key.Substring(0, Math.Min(92, key.Length)), ConsoleColor.DarkMagenta);
+                else if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "', Failed to remove referenced object from cache, Key:" + key.Substring(0, Math.Min(92, key.Length)), ConsoleColor.Red);
+            }
+        }
 
         ///// <summary>
         ///// User data object as defined by user.
@@ -1280,6 +1298,7 @@ namespace NKLI.DeDupeProxy
             // If writing to disk cache failed
             return false;
         }
+
         byte[] ReadChunk(string key)
         {
             bool memoryCacheReceived = false;
@@ -1365,22 +1384,17 @@ namespace NKLI.DeDupeProxy
             try
             {
                 // First delete from memory
-                if (key.StartsWith("Headers_"))
-                {
-                    if (memoryCacheHeaders.Contains(key.Remove(0, 8))) memoryCacheHeaders.Remove(key.Remove(0, 8));
-                }
-                if (key.StartsWith("Body_"))
-                {
-                    if (memoryCacheBody.Contains(key.Remove(0, 5))) memoryCacheBody.Remove(key.Remove(0, 5));
-                }
+                if (key.StartsWith("Headers_")) if (memoryCacheHeaders.Contains(key.Remove(0, 8))) memoryCacheHeaders.Remove(key.Remove(0, 8));
+                else if (key.StartsWith("Body_")) if (memoryCacheBody.Contains(key.Remove(0, 5))) memoryCacheBody.Remove(key.Remove(0, 5));
+
 
                 // Then delete from disk
                 if (chunkCache.ContainsKey(key)) chunkCache.TryRemove(key); // Add code to handle locked files gracefully later!
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                Console.WriteLine(ex);
             }
             return false;
         }
@@ -1463,6 +1477,7 @@ namespace NKLI.DeDupeProxy
                     // TODO: dispose managed state (managed objects).
                     proxyServer.Dispose();
 
+                    chunkCache.EntryRemoved -= ChunkRemoved;
                     chunkCache.Dispose();
 
                     @lock.Dispose();

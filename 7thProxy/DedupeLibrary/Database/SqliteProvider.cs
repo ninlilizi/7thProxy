@@ -244,6 +244,37 @@ namespace WatsonDedupe.Database
         }
 
         /// <summary>
+        /// List the objects that reference a chunk
+        /// </summary>
+        /// <param name="chunk">Chunk to find objects for</param>
+        /// <param name="names">List of object keys.</param>
+        public override void ListObjectsWithChunk(string chunk, out List<string> names)
+        {
+            names = new List<string>();
+
+            string query = "SELECT * FROM ObjectMap WHERE ChunkKey = '" + chunk + "'";
+            DataTable result;
+
+            lock (_ObjectLock)
+            {
+                if (Query(query, out result, true))
+                {
+                    if (result != null && result.Rows.Count > 0)
+                    {
+                        foreach (DataRow curr in result.Rows)
+                        {
+                            names.Add(curr["Name"].ToString());
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Query failed");
+                }
+            }
+        }
+
+        /// <summary>
         /// Add chunk from an object to the index.
         /// </summary>
         /// <param name="name">The name of the object.</param>

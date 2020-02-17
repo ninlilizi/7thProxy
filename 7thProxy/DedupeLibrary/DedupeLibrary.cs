@@ -744,6 +744,17 @@ namespace WatsonDedupe
         }
 
         /// <summary>
+        /// List the objects that reference a chunk
+        /// </summary>
+        /// <param name="chunk">Chunk to find objects for</param>
+        /// <param name="keys">List of object names.</param>
+        public void ListObjectsWithChunk(string chunk, out List<string> keys)
+        {
+            _Database.ListObjectsWithChunk(chunk, out keys);
+            return;
+        }
+
+        /// <summary>
         /// Determine if an object exists in the index.
         /// </summary>
         /// <param name="objectName">The name of the object.</param>
