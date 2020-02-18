@@ -7,14 +7,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Runtime.InteropServices;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Titanium.Web.Proxy;
 using Titanium.Web.Proxy.EventArguments;
 using Titanium.Web.Proxy.Exceptions;
-using Titanium.Web.Proxy.Helpers;
 using Titanium.Web.Proxy.Http;
 using Titanium.Web.Proxy.Models;
 using Titanium.Web.Proxy.StreamExtended.Network;
@@ -22,6 +20,8 @@ using WatsonDedupe;
 using Noemax.Compression;
 using SJP.DiskCache;
 using System.Net.Http.Headers;
+using MessagePack;
+using Titanium.Web.Proxy.Helpers;
 
 namespace NKLI.DeDupeProxy
 {
@@ -50,58 +50,35 @@ namespace NKLI.DeDupeProxy
         public bool chunkLock = false;
         public bool queueLock = false;
 
-        struct ObjectStruct
+        private readonly MessagePackSerializerOptions messagePackOptions = MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray);
+
+        // PackObject must be public type to avoid runtime exceptions!
+        [MessagePackObject]
+        public struct JournalStruct
         {
+            [Key(0)]
             public string URI;
+
+            [Key(1)]
             public byte[] Headers;
+
+            [Key(2)]
             public byte[] Body;
+        };
 
-            public byte[] packed;
+        [MessagePackObject]
+        public class HeaderPackObject
+        {
+            [Key(0)]
+            public Dictionary<string, string> Headers;
 
-            public void PackStruct(string requestURI, byte[] incomingHeaders, byte[] incomingBody)
+            public HeaderPackObject()
             {
-                URI = requestURI;
-                
-                int packedlength = 12 + requestURI.Length + incomingHeaders.Length + incomingBody.Length;
-
-                packed = new byte[packedlength];
-
-                packed[0] = (byte)requestURI.Length;
-                packed[1] = (byte)(requestURI.Length >> 8);
-                packed[2] = (byte)(requestURI.Length >> 0x10);
-                packed[3] = (byte)(requestURI.Length >> 0x18);
-
-                packed[4] = (byte)incomingHeaders.Length;
-                packed[5] = (byte)(incomingHeaders.Length >> 8);
-                packed[6] = (byte)(incomingHeaders.Length >> 0x10);
-                packed[7] = (byte)(incomingHeaders.Length >> 0x18);
-
-                packed[8] = (byte)incomingBody.Length;
-                packed[9] = (byte)(incomingBody.Length >> 8);
-                packed[10] = (byte)(incomingBody.Length >> 0x10);
-                packed[11] = (byte)(incomingBody.Length >> 0x18);
-
-                Buffer.BlockCopy(Encoding.UTF8.GetBytes(URI), 0, packed, 12, requestURI.Length);
-                Buffer.BlockCopy(incomingHeaders, 0, packed, 12 + requestURI.Length, incomingHeaders.Length);
-                if (incomingBody.Length != 0) Buffer.BlockCopy(incomingBody, 0, packed, 12 + requestURI.Length + incomingHeaders.Length, incomingBody.Length);
-            }
-
-            public void UnPackStruct(byte[] packed)
-            {
-                int URILength = BitConverter.ToInt32(packed, 0);
-                int HeaderLength = BitConverter.ToInt32(packed, 4);
-                int BodyLength = BitConverter.ToInt32(packed, 8);
-
-                Headers = new byte[HeaderLength];
-                Body = new byte[BodyLength];
-
-                URI = Encoding.UTF8.GetString(packed, 12, URILength);
-
-                Buffer.BlockCopy(packed, 12 + URILength, Headers, 0, HeaderLength);
-                if (BodyLength != 0) Buffer.BlockCopy(packed, 12 + URILength + HeaderLength, Body, 0, BodyLength);
+                Headers = new Dictionary<string, string>();
             }
         };
         //
+
 
         // Watson DeDupe
         ulong indexChunkQueue = 0;
@@ -112,9 +89,6 @@ namespace NKLI.DeDupeProxy
         //Watson DeDupe
         DedupeLibrary deDupe;
         static List<Chunk> Chunks;
-        //static string Key = "kjv";
-        //static List<string> Keys;
-        //static byte[] Data;
         const int deDupeMinChunkSize = 32768;
         const int deDupeMaxChunkSize = 262144;
         const int deDupeMaxMemoryCacheItems = 1000;
@@ -317,24 +291,23 @@ namespace NKLI.DeDupeProxy
                             // First decode request from queue
                             try
                             {
-                                ObjectStruct chunkStruct = new ObjectStruct();
-                                chunkStruct.UnPackStruct(data);
+                                JournalStruct journalStruct = MessagePackSerializer.Deserialize<JournalStruct>(data, messagePackOptions);
 
                                 try
                                 {
-                                    int bodyLength = chunkStruct.Body.Length;
-                                    string bodyURI = chunkStruct.URI;
+                                    int bodyLength = journalStruct.Body.Length;
+                                    string bodyURI = journalStruct.URI;
 
                                     string responseString = "";
                                     if (bodyLength != 0)
                                     {
-                                        deDupe.StoreOrReplaceObject("Body_" + chunkStruct.URI, chunkStruct.Body, out Chunks, "Body_");
+                                        deDupe.StoreOrReplaceObject("Body_" + journalStruct.URI, journalStruct.Body, out Chunks, "Body_");
                                         responseString = ("<Cache> (DeDupe) stored object, Size:" + TitaniumHelper.FormatSize(bodyLength) + ", Chunks:" + Chunks.Count + ", URI:" + bodyURI + Environment.NewLine);
                                     }
                                     // If no body supplied then just update the headers and refresh the body access counters
                                     else
                                     {
-                                        if (deDupe.RetrieveObjectMetadata("Body_" + chunkStruct.URI, out ObjectMetadata md))
+                                        if (deDupe.RetrieveObjectMetadata("Body_" + journalStruct.URI, out ObjectMetadata md))
                                         {
                                             foreach (Chunk chunk in md.Chunks)
                                             {
@@ -345,18 +318,16 @@ namespace NKLI.DeDupeProxy
                                         }
                                     }
 
-
-                                    deDupe.StoreOrReplaceObject("Headers_" + chunkStruct.URI, chunkStruct.Headers, out Chunks, "Headers_");
+                                    deDupe.StoreOrReplaceObject("Headers_" + journalStruct.URI, journalStruct.Headers, out Chunks, "Headers_");
 
                                     if (deDupe.IndexStats(out NumObjects, out int cachedObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
                                         await WriteToConsole(responseString + "                    [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] [CachedKeys: " + cachedObjects + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]", ConsoleColor.Yellow);
                                 }
                                 catch (Exception ex)
                                 {
-                                    await WriteToConsole("<Cache> [ERROR] Dedupilication attempt failed, URI:" + chunkStruct.URI + Environment.NewLine + ex, ConsoleColor.Red);
+                                    await WriteToConsole("<Cache> [ERROR] Dedupilication attempt failed, URI:" + journalStruct.URI + Environment.NewLine + ex, ConsoleColor.Red);
                                 }
 
-                                //session.Flush();
                             }
                             catch (Exception ex)
                             {
@@ -470,11 +441,18 @@ namespace NKLI.DeDupeProxy
             // Only explicit proxies can be set as system proxy!
             //proxyServer.SetAsSystemHttpProxy(explicitEndPoint);
             //proxyServer.SetAsSystemHttpsProxy(explicitEndPoint);
+
+            // Only set as system proxy if running in Release mode
+#if !DEBUG
             if (RunTime.IsWindows)
             {
                 proxyServer.SetAsSystemProxy(explicitEndPoint, ProxyProtocolType.AllHttp);
             }
+#endif
+
         }
+        
+
 
         public void Stop()
         {
@@ -653,16 +631,18 @@ namespace NKLI.DeDupeProxy
                     if (deDupe.RetrieveObject("Headers_" + key, out byte[] headerData))
                     {
                         // Convert byte[] back into dictionary
-                        MemoryStream mStream = new MemoryStream();
-                        BinaryFormatter binFormatter = new BinaryFormatter();
-                        mStream.Write(headerData, 0, headerData.Length);
-                        mStream.Position = 0;
-                        Dictionary<string, string> restoredHeader = binFormatter.Deserialize(mStream) as Dictionary<string, string>;
+                        //MemoryStream mStream = new MemoryStream();
+                        //BinaryFormatter binFormatter = new BinaryFormatter();
+                        //mStream.Write(headerData, 0, headerData.Length);
+                        //mStream.Position = 0;
+                        //Dictionary<string, string> restoredHeader = binFormatter.Deserialize(mStream) as Dictionary<string, string>;
 
-                        mStream.Dispose();
+                        HeaderPackObject restoredHeader = MessagePackSerializer.Deserialize<HeaderPackObject>(headerData);
+
+                        //mStream.Dispose();
 
                         // Complain if dictionary is unexpectedly empty
-                        if (restoredHeader.Count == 0)
+                        if (restoredHeader.Headers.Count == 0)
                         {
                             await WriteToConsole("<Cache> [ERROR] (onRequest) Cache deserialization resulted in 0 headers", ConsoleColor.Red);
                         }
@@ -670,7 +650,7 @@ namespace NKLI.DeDupeProxy
                         {
                             // Convert dictionary into response format
                             Dictionary<string, HttpHeader> headerDictionary = new Dictionary<string, HttpHeader>();
-                            foreach (var pair in restoredHeader)
+                            foreach (var pair in restoredHeader.Headers)
                             {
                                 //await writeToConsole("Key:" + pair.Key + " Value:" + pair.Value, ConsoleColor.Green);
                                 //e.HttpClient.Response.Headers.AddHeader(new HttpHeader(pair.Key, pair.Value));
@@ -1064,27 +1044,33 @@ namespace NKLI.DeDupeProxy
                                 {
 
                                     // Serialize headers
-                                    Dictionary<string, string> headerDictionary = new Dictionary<string, string>();
+                                    HeaderPackObject headerDictionary = new HeaderPackObject();
                                     IEnumerator<HttpHeader> headerEnumerator = e.HttpClient.Response.Headers.GetEnumerator();
                                     while (headerEnumerator.MoveNext())
                                     {
-                                        if (!headerDictionary.ContainsKey(headerEnumerator.Current.Name))
-                                            headerDictionary.Add(headerEnumerator.Current.Name, headerEnumerator.Current.Value);
+                                        if (!headerDictionary.Headers.ContainsKey(headerEnumerator.Current.Name))
+                                            headerDictionary.Headers.Add(headerEnumerator.Current.Name, headerEnumerator.Current.Value);
                                     }
-                                    var binFormatter = new BinaryFormatter();
-                                    var mStream = new MemoryStream();
-                                    binFormatter.Serialize(mStream, headerDictionary);
+                                    //var binFormatter = new BinaryFormatter();
+                                    //var mStream = new MemoryStream();
+                                    //binFormatter.Serialize(mStream, headerDictionary);
 
                                     // Store response body in cache provided it's the expected length
                                     try
                                     {
-                                        ObjectStruct responseStruct = new ObjectStruct();
-                                        if (!bodyValidated) responseStruct.PackStruct(key, mStream.ToArray(), output);
-                                        else responseStruct.PackStruct(key, mStream.ToArray(), new byte[0]);
-                                        mStream.Dispose();
+                                        JournalStruct journalStruct = new JournalStruct()
+                                        {
+                                            URI = key,
+                                            Headers = MessagePackSerializer.Serialize(headerDictionary)
+                                        };
+
+                                        if (!bodyValidated) journalStruct.Body = output;
+                                        else journalStruct.Body = new byte[0];
+
+                                        //mStream.Dispose();
 
                                         // Append to the journal queue
-                                        memoryJournalQueue.AddReplace(indexChunkQueue, responseStruct.packed);
+                                        memoryJournalQueue.AddReplace(indexChunkQueue, MessagePackSerializer.Serialize(journalStruct, messagePackOptions));
                                         
                                         // Append unique key index
                                         if (ulong.MaxValue == indexChunkQueue) indexChunkQueue = 0;
@@ -1107,10 +1093,10 @@ namespace NKLI.DeDupeProxy
                                     else if (maxObjectSizeHTTP < e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache as larger than configured Max Object Size, key: " + key, ConsoleColor.Magenta);
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 //throw new Exception("Unable to output headers to cache");
-                                await WriteToConsole("<Cache> [ERROR] Unable to output headers to cache", ConsoleColor.Red);
+                                await WriteToConsole("<Cache> [ERROR] Unable to output headers to cache" + Environment.NewLine + ex, ConsoleColor.Red);
                             }
 
 
