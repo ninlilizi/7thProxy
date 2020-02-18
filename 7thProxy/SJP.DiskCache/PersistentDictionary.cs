@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Community.CsharpSqlite.SQLiteClient;
@@ -163,7 +164,7 @@ namespace SJP
         //where TValue : new()
     {
         private readonly string _tableName;
-        private readonly Dictionary<TKey, TValue> _dict;
+        private readonly ConcurrentDictionary<TKey, TValue> _dict;
         private readonly SqliteConnection _conn;
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2100:Review SQL queries for security vulnerabilities")]
@@ -175,7 +176,7 @@ namespace SJP
                 throw new ArgumentNullException("table");
 
             _tableName = table;
-            _dict = new Dictionary<TKey, TValue>(/*new DBFields<TKey>()*/);
+            _dict = new ConcurrentDictionary<TKey, TValue>(/*new DBFields<TKey>()*/);
 
             var cs = "Data Source=file:" + db + ".db";
 
@@ -252,7 +253,7 @@ namespace SJP
                                     }
                                 }
 
-                                _dict.Add(newKey, newValue);
+                                _dict.TryAdd(newKey, newValue);
                             }
                         }
                     }
@@ -333,7 +334,7 @@ namespace SJP
                 DBFields<TKey>.Values(key), DBFields<TValue>.Values(value));
 
             if (ExecuteNonQuery(stm))
-                _dict.Add(key, value);
+                _dict.TryAdd(key, value);
         }
 
         public bool TryRemove(TKey key, out TValue value)
@@ -349,7 +350,7 @@ namespace SJP
         public bool Remove(TKey key)
         {
             var stm = string.Format("DELETE FROM {0} WHERE {1}", _tableName, DBFields<TKey>.FieldsAndValues(key));
-            return ExecuteNonQuery(stm) && _dict.Remove(key);
+            return ExecuteNonQuery(stm) && _dict.TryRemove(key, out TValue value);
         }
 
         public bool TryGetValue(TKey key, out TValue value)

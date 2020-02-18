@@ -28,7 +28,7 @@ namespace WatsonDedupe.Database
         private readonly object _ChunkRefcountLock = new object();
         private readonly object _ObjectLock = new object();
 
-        List<String> memoryCacheObjectList = new List<string>();
+        HashSet<String> memoryCacheObjectList = new HashSet<string>();
         LRUCache<string, byte[]> memoryCacheObjectKey;
 
         #endregion
@@ -62,7 +62,7 @@ namespace WatsonDedupe.Database
             ListObjects(out List<string> testList);
 
             // Detect erroenous duplicates
-            memoryCacheObjectList = new HashSet<string>(testList).ToList();
+            memoryCacheObjectList = new HashSet<string>(testList);
             if (memoryCacheObjectList.Count() != testList.Count()) Console.WriteLine("<DeDupe> ERROR: Duplicate Unique Keys found in database!");
 
             Console.WriteLine("<DeDupe> (SQLiteProvider) " + testList.Count() + " Keys loaded from database");

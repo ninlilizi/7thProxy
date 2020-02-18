@@ -261,6 +261,9 @@ namespace NKLI.DeDupeProxy
                     while (memoryJournalQueue.Count() == 0)
                     { Thread.Sleep(100); }
 
+                    // Opportunity for buffer to fill more before batching to journal
+                    Thread.Sleep(2500);
+
                     // Lock
                     chunkLock = true;
 
