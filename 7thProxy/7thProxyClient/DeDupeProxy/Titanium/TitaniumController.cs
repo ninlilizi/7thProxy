@@ -80,7 +80,7 @@ namespace NKLI.DeDupeProxy
         //
 
 
-        // Watson DeDupe
+        // Memory Buffers
         ulong indexChunkQueue = 0;
         FIFOCache<ulong, byte[]> memoryJournalQueue;
         LRUCache<string, byte[]> memoryCacheBody;
@@ -101,6 +101,7 @@ namespace NKLI.DeDupeProxy
         static ulong PhysicalBytes;
         static decimal DedupeRatioX;
         static decimal DedupeRatioPercent;
+        public const long minObjectBytesHTTP = 256;
         public static long maxObjectSizeHTTP;
         //END
 
@@ -628,142 +629,115 @@ namespace NKLI.DeDupeProxy
                 {
                     bool deleteCache = false;
                     // We only reconstruct the stream after successful object retrieval
-                    if (deDupe.RetrieveObject("Headers_" + key, out byte[] headerData))
+                    if (RetrieveHeaders(key, out Dictionary<string, HttpHeader> headerDictionary))
                     {
-                        // Convert byte[] back into dictionary
-                        //MemoryStream mStream = new MemoryStream();
-                        //BinaryFormatter binFormatter = new BinaryFormatter();
-                        //mStream.Write(headerData, 0, headerData.Length);
-                        //mStream.Position = 0;
-                        //Dictionary<string, string> restoredHeader = binFormatter.Deserialize(mStream) as Dictionary<string, string>;
-
-                        HeaderPackObject restoredHeader = MessagePackSerializer.Deserialize<HeaderPackObject>(headerData);
-
-                        //mStream.Dispose();
-
-                        // Complain if dictionary is unexpectedly empty
-                        if (restoredHeader.Headers.Count == 0)
+                        try
                         {
-                            await WriteToConsole("<Cache> [ERROR] (onRequest) Cache deserialization resulted in 0 headers", ConsoleColor.Red);
-                        }
-                        else
-                        {
-                            // Convert dictionary into response format
-                            Dictionary<string, HttpHeader> headerDictionary = new Dictionary<string, HttpHeader>();
-                            foreach (var pair in restoredHeader.Headers)
-                            {
-                                //await writeToConsole("Key:" + pair.Key + " Value:" + pair.Value, ConsoleColor.Green);
-                                //e.HttpClient.Response.Headers.AddHeader(new HttpHeader(pair.Key, pair.Value));
-                                headerDictionary.Add(pair.Key, new HttpHeader(pair.Key, pair.Value));
-                            }
+                            // Check if resource has expired
+                            HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToLongDateString() + " 00:00:00 GMT");
                             try
                             {
-                                // Check if resource has expired
-                                HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToLongDateString() + " 00:00:00 GMT");
-                                try
-                                {
-                                    HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
-                                    if (header != null) cacheExpires = header;
-                                }
-                                catch
-                                {
-                                    await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
-                                }
+                                HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
+                                if (header != null) cacheExpires = header;
+                            }
+                            catch
+                            {
+                                await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                            }
 
-                                // Retrive Cache-Control header
-                                CacheControlHeaderValue cacheControl = new CacheControlHeaderValue();
-                                try
+                            // Retrive Cache-Control header
+                            CacheControlHeaderValue cacheControl = new CacheControlHeaderValue();
+                            try
+                            {
+                                HttpHeader header = e.HttpClient.Request.Headers.GetFirstHeader("Cache-Control");
+                                if (header != null) cacheControl = CacheControlHeaderValue.Parse(header.Value);
+                            }
+                            catch
+                            {
+                                await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                            }
+                            // Respect cache control headers
+                            bool canCache = true;
+                            string readableMessage = " by ";
+                            if (cacheControl.NoCache || cacheControl.NoStore || cacheControl.MaxAge.HasValue)
+                            {
+
+                                // No-Cache
+                                if (cacheControl.NoCache)
                                 {
-                                    HttpHeader header = e.HttpClient.Request.Headers.GetFirstHeader("Cache-Control");
-                                    if (header != null) cacheControl = CacheControlHeaderValue.Parse(header.Value);
+                                    canCache = false;
+                                    readableMessage += "(No-Cache) request";
                                 }
-                                catch
+                                // Max-Age
+                                if (cacheControl.MaxAge.HasValue)
                                 {
-                                    await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                                    if (cacheControl.MaxAge.Value.TotalSeconds == 0) canCache = false;
+                                    readableMessage += "(Max-Age=0) request";
                                 }
-                                // Respect cache control headers
-                                bool canCache = true;
-                                string readableMessage = " by ";
-                                if (cacheControl.NoCache || cacheControl.NoStore || cacheControl.MaxAge.HasValue)
+                            }
+
+                            // Selectively override No-Store directives
+                            string hostname = e.HttpClient.Request.RequestUri.Host;
+                            foreach (string value in overrideNoStoreNoCache)
+                            {
+                                if (hostname.Contains(value))
                                 {
-                                    
-                                    // No-Cache
-                                    if (cacheControl.NoCache)
+
+                                    canCache = true;
+                                }
+                            }
+
+                            // If resource has expired or client sent a revalidation request
+                            if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), DateTime.Now) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since") || !canCache)
+                            {
+                                if (readableMessage == " by ") readableMessage += "response header";
+                                // If object has expired, then delete cached headers and revalidate against server
+                                if (!e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since")) e.HttpClient.Request.Headers.AddHeader("If-Modified-Since", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                await WriteToConsole("<Cache> object expired" + readableMessage + ", URI:" + TitaniumHelper.FormatURI(key), ConsoleColor.Green);
+                            }
+                            // Otherwise attempt to replay from cache
+                            else if (canCache)
+                            {
+
+                                // Check matching body exists and retrive
+                                if (deDupe.ObjectExists("Body_" + key))
+                                {
+                                    deDupe.RetrieveObject("Body_" + key, out byte[] objectData);
+
+                                    // Get cached content-length
+                                    if (headerDictionary.TryGetValue("Content-Length", out HttpHeader contentLength))
                                     {
-                                        canCache = false;
-                                        readableMessage += "(No-Cache) request";
-                                    }
-                                    // Max-Age
-                                    if (cacheControl.MaxAge.HasValue)
-                                    {
-                                        if (cacheControl.MaxAge.Value.TotalSeconds == 0) canCache = false;
-                                        readableMessage += "(Max-Age=0) request";
-                                    }
-                                }
-
-                                // Selectively override No-Store directives
-                                string hostname = e.HttpClient.Request.RequestUri.Host;
-                                foreach (string value in overrideNoStoreNoCache)
-                                {
-                                    if (hostname.Contains(value))
-                                    {
-
-                                        canCache = true;
-                                    }
-                                }
-
-                                // If resource has expired or client sent a revalidation request
-                                if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), DateTime.Now) || e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since") || !canCache)
-                                {
-                                    if (readableMessage == " by ") readableMessage += "response header";
-                                    // If object has expired, then delete cached headers and revalidate against server
-                                    deDupe.DeleteObject("Headers_" + key);
-                                    if (!e.HttpClient.Response.Headers.HeaderExists("If-Modified-Since")) e.HttpClient.Request.Headers.AddHeader("If-Modified-Since", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                    await WriteToConsole("<Cache> object expired" + readableMessage +  ", URI:" + key, ConsoleColor.Green);
-                                }
-                                // Otherwise attempt to replay from cache
-                                else if (canCache)
-                                {
-
-                                    // Check matching body exists and retrive
-                                    if (deDupe.ObjectExists("Body_" + key))
-                                    {
-                                        deDupe.RetrieveObject("Body_" + key, out byte[] objectData);
-
-                                        // Get cached content-length
-                                        if (headerDictionary.TryGetValue("Content-Length", out HttpHeader contentLength))
+                                        // Make sure both header content length and retrieved body length match
+                                        if (Convert.ToInt64(contentLength.Value) == objectData.LongLength)
                                         {
-                                            // Make sure both header content length and retrieved body length match
-                                            if (Convert.ToInt64(contentLength.Value) == objectData.LongLength)
-                                            {
 
-                                                await WriteToConsole("<Cache> found object, Size: " + TitaniumHelper.FormatSize(objectData.Length) + ", URI:" + key, ConsoleColor.Cyan);
+                                            await WriteToConsole("<Cache> found object, Size: " + TitaniumHelper.FormatSize(objectData.Length) + ", URI:" + TitaniumHelper.FormatURI(key), ConsoleColor.Cyan);
 
-                                                // Cancel request and respond cached data
-                                                try
-                                                {
-                                                    e.Ok(objectData, headerDictionary, true);
-                                                    e.TerminateServerConnection();
-                                                }
-                                                catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to send recontructed request", ConsoleColor.Red); }
-                                            }
-                                            else
+                                            // Cancel request and respond cached data
+                                            try
                                             {
-                                                await WriteToConsole("<Cache> Content/Body length mismatch during cache retrieval", ConsoleColor.Red);
-                                                await WriteToConsole("<Cache> [Content: " + TitaniumHelper.FormatSize(Convert.ToInt64(contentLength.Value)) + "], [Content: " + TitaniumHelper.FormatSize(objectData.LongLength) + "], URI:" + key, ConsoleColor.Red);
-                                                deleteCache = true;
+                                                e.Ok(objectData, headerDictionary, true);
+                                                e.TerminateServerConnection();
                                             }
+                                            catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to send recontructed request", ConsoleColor.Red); }
                                         }
                                         else
                                         {
-                                            await WriteToConsole("<Cache> Content-Length header not found during cache retrieval", ConsoleColor.Red);
+                                            await WriteToConsole("<Cache> Content/Body length mismatch during cache retrieval", ConsoleColor.Red);
+                                            await WriteToConsole("<Cache> [Content: " + TitaniumHelper.FormatSize(Convert.ToInt64(contentLength.Value)) + "], [Content: " + TitaniumHelper.FormatSize(objectData.LongLength) + "], URI:" + TitaniumHelper.FormatURI(key), ConsoleColor.Red);
                                             deleteCache = true;
                                         }
                                     }
+                                    else
+                                    {
+                                        await WriteToConsole("<Cache> Content-Length header not found during cache retrieval", ConsoleColor.Red);
+                                        deleteCache = true;
+                                    }
                                 }
                             }
-                            catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to restore cached object", ConsoleColor.Red); }
                         }
+                        catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to restore cached object", ConsoleColor.Red); }
+                        
                     }
                     // In case of object retrieval failing, we wan't to remove it from the Index
                     else deleteCache = true;
@@ -856,7 +830,7 @@ namespace NKLI.DeDupeProxy
             //if (!e.HttpClient.Request.Host.Equals("www.gutenberg.org")) return;
             if ((e.HttpClient.Request.Method == "GET" || e.HttpClient.Request.Method == "POST") 
                 && ((e.HttpClient.Response.StatusCode == (int)HttpStatusCode.OK) || (e.HttpClient.Response.StatusCode == (int)HttpStatusCode.NotModified))
-                && (!e.HttpClient.Request.RequestUri.IsLoopback))
+                && (!e.HttpClient.Response.IsChunked) && (!e.HttpClient.Request.RequestUri.IsLoopback))
             {
 
                 byte[] output = new byte[0];
@@ -866,48 +840,10 @@ namespace NKLI.DeDupeProxy
                     // Special handling for netflix
                     TitaniumHelper.NetflixKeyMorph(key, out key, out ulong start, out ulong end);
 
-                    bool bodyValidated = false;
-                    bool bodyRetrieved = false;
-                    // If resource NotModified, then attempt to retrieve from cache
-                    if ((e.HttpClient.Response.StatusCode == (int)HttpStatusCode.NotModified) && (deDupe.ObjectExists("Body_" + key)))
-                    {
-                        if (deDupe.RetrieveObject("Body_" + key, out byte[] objectData))
-                        {
-                            await WriteToConsole("<Cache> Re-validated object, Size: " + TitaniumHelper.FormatSize(objectData.Length) + ", URI:" + key, ConsoleColor.Cyan);
-
-                            // Respond cached data
-                            try
-                            {
-                                output = objectData;
-                                e.SetResponseBody(objectData);
-                                e.HttpClient.Response.StatusCode = (int)HttpStatusCode.OK;
-                                bodyValidated = true;
-                                bodyRetrieved = true;
-
-                                // We're done here, close server connection early.
-                                e.TerminateServerConnection();
-                            }
-                            catch { await WriteToConsole("<Cache> [ERROR] (OnResponse) Failure while attempting to send recontructed request", ConsoleColor.Red); }
-                        }
-                        // If body retrieval failed, then re-request
-                        //if (!bodyRetrieved) e.ReRequest = true;
-                    }
-                    // If !NotModified than receive response body from server
-                    else if (e.HttpClient.Response.StatusCode != (int)HttpStatusCode.NotModified && e.HttpClient.Response.HasBody)
-                    {
-                        if (deDupe.ObjectExists("Body_" + key)) deDupe.DeleteObject("Body_" + key );
-                        if (deDupe.ObjectExists("Headers_" + key )) deDupe.DeleteObject("Headers_" + key);
-
-                        output = await e.GetResponseBody();
-                        if (output.LongLength != 0) bodyRetrieved = true;
-                    }
                  
                     // If no headers or body received than don't even bother
-                    if ((e.HttpClient.Response.Headers.Count() != 0) && bodyRetrieved)
+                    if ((e.HttpClient.Response.Headers.Count() != 0))
                     {
-                        // We have what we need, close server connection early.
-                        e.TerminateServerConnection();
-
                         // Retrive Cache-Control header
                         CacheControlHeaderValue cacheControl = new CacheControlHeaderValue();
                         try
@@ -920,6 +856,68 @@ namespace NKLI.DeDupeProxy
                             await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
                         }
 
+                        bool bodyValidated = false;
+                        bool bodyRetrieved = false;
+                        // If resource NotModified, then attempt to retrieve from cache
+                        if ((e.HttpClient.Response.StatusCode == (int)HttpStatusCode.NotModified) && (deDupe.ObjectExists("Body_" + key)))
+                        {
+                            // Attempt to retrieve body
+                            if (deDupe.RetrieveObject("Body_" + key, out byte[] objectData))
+                            {                          
+                                // Attempt to retrieve headers
+                                if (RetrieveHeaders(key, out Dictionary<string, HttpHeader> headerDictionary))
+                                {
+                                    // Attempt to retrieve Content-Length header
+                                    if (headerDictionary.TryGetValue("Content-Length", out HttpHeader ContentLengthHeader))
+                                        if (ContentLengthHeader != null)
+                                        {
+                                            // Ensure the object has not been truncated
+                                            if (Convert.ToInt64(ContentLengthHeader.Value) != objectData.LongLength) // TODO - Discover why this happens at all
+                                            {
+                                                await WriteToConsole("<Cache> Retrieved Object size mismath on validation, Header:" + Convert.ToInt64(ContentLengthHeader.Value) + ", Retrieved:" + objectData.LongLength + ", key:" + TitaniumHelper.FormatURI(key), ConsoleColor.Red);
+
+                                                deDupe.DeleteObject("Headers_" + key);
+                                                deDupe.DeleteObject("Body_" + key);
+                                            }
+                                            else
+                                            {
+                                                await WriteToConsole("<Cache> Re-validated object, Size: " + TitaniumHelper.FormatSize(objectData.Length) + ", URI:" + TitaniumHelper.FormatURI(key), ConsoleColor.Cyan);
+
+                                                // Respond cached data
+                                                try
+                                                {
+                                                    output = objectData;
+                                                    e.SetResponseBody(objectData);
+                                                    e.HttpClient.Response.StatusCode = (int)HttpStatusCode.OK;
+                                                    bodyValidated = true;
+                                                    bodyRetrieved = true;
+                                                }
+                                                catch { await WriteToConsole("<Cache> [ERROR] (OnResponse) Failure while attempting to send recontructed request", ConsoleColor.Red); }
+
+                                            }
+                                        }
+                                }
+                            }
+                            // If body retrieval failed, then re-request
+                            if (!bodyRetrieved) e.ReRequest = true;
+                        }
+                        // If !NotModified than receive response body from server
+                        else if (e.HttpClient.Response.StatusCode != (int)HttpStatusCode.NotModified && e.HttpClient.Response.HasBody)
+                        {
+                            if (deDupe.ObjectExists("Body_" + key)) deDupe.DeleteObject("Body_" + key);
+                            if (deDupe.ObjectExists("Headers_" + key)) deDupe.DeleteObject("Headers_" + key);
+
+                            output = await e.GetResponseBody();
+                            if (output.LongLength != 0) bodyRetrieved = true;
+                        }
+
+                        // We have what we need, close server connection early.
+                        e.TerminateServerConnection();
+
+
+                        //
+                        if (bodyRetrieved)
+                        {
                         // Selectively override No-Store No-Cache directives
                         bool overrideCache_Control = false;
                         string hostname = e.HttpClient.Request.RequestUri.Host;
@@ -928,7 +926,7 @@ namespace NKLI.DeDupeProxy
                             if (hostname.Contains(value))
                             {
                                 overrideCache_Control = true;
-                                await WriteToConsole("<Cache> Cache-Control: [Policy: Override] for key:" + key, ConsoleColor.DarkYellow);
+                                await WriteToConsole("<Cache> Cache-Control: [Policy: Override] for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
                             }
                         }
 
@@ -1019,87 +1017,70 @@ namespace NKLI.DeDupeProxy
                                 }
                             }
 
-                            await WriteToConsole("<Cache> Cache-Control: " + readableMessage + "header for key:" + key, ConsoleColor.DarkYellow);
+                            await WriteToConsole("<Cache> Cache-Control: " + readableMessage + "header for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
                         }
-                        if (!canCache)
-                        {
-                            if (deDupe.ObjectExists("Body_" + key)) deDupe.DeleteObject("Body_" + key);
-                            if (deDupe.ObjectExists("Headers_" + key)) deDupe.DeleteObject("Headers_" + key);
-                        }
-                        else
-                        {
-                            //if (cacheControl. )
-                            //{
-                            //    await WriteToConsole("<Titanium> Adding expires header based on Cache-Control Max-Age for key: " + Key, ConsoleColor.DarkGreen);
-                            //    CacheControlHeaderValue CacheControlHeaderValue.Parse(cacheControl.Value);
-                            //}
-
-
-                            try
+                            if (!canCache)
                             {
-                                // For now we only want to avoid caching range-requests and put a min/max size on incoming objects
-                                if ((output.LongLength == e.HttpClient.Response.ContentLength) &&
-                                    (e.HttpClient.Response.ContentLength > 512) &&
-                                    (maxObjectSizeHTTP > e.HttpClient.Response.ContentLength))
+                                if (deDupe.ObjectExists("Body_" + key)) deDupe.DeleteObject("Body_" + key);
+                                if (deDupe.ObjectExists("Headers_" + key)) deDupe.DeleteObject("Headers_" + key);
+                            }
+                            else
+                            {
+                                try
                                 {
-
-                                    // Serialize headers
-                                    HeaderPackObject headerDictionary = new HeaderPackObject();
-                                    IEnumerator<HttpHeader> headerEnumerator = e.HttpClient.Response.Headers.GetEnumerator();
-                                    while (headerEnumerator.MoveNext())
+                                    // For now we only want to avoid caching range-requests and put a min/max size on incoming objects
+                                    if ((output.LongLength == e.HttpClient.Response.ContentLength) &&
+                                        (e.HttpClient.Response.ContentLength > minObjectBytesHTTP) &&
+                                        (maxObjectSizeHTTP > e.HttpClient.Response.ContentLength))
                                     {
-                                        if (!headerDictionary.Headers.ContainsKey(headerEnumerator.Current.Name))
-                                            headerDictionary.Headers.Add(headerEnumerator.Current.Name, headerEnumerator.Current.Value);
-                                    }
-                                    //var binFormatter = new BinaryFormatter();
-                                    //var mStream = new MemoryStream();
-                                    //binFormatter.Serialize(mStream, headerDictionary);
 
-                                    // Store response body in cache provided it's the expected length
-                                    try
-                                    {
-                                        JournalStruct journalStruct = new JournalStruct()
+                                        // Serialize headers
+                                        HeaderPackObject headerDictionary = new HeaderPackObject();
+                                        IEnumerator<HttpHeader> headerEnumerator = e.HttpClient.Response.Headers.GetEnumerator();
+                                        while (headerEnumerator.MoveNext())
                                         {
-                                            URI = key,
-                                            Headers = MessagePackSerializer.Serialize(headerDictionary)
-                                        };
+                                            if (!headerDictionary.Headers.ContainsKey(headerEnumerator.Current.Name))
+                                                headerDictionary.Headers.Add(headerEnumerator.Current.Name, headerEnumerator.Current.Value);
+                                        }
+                                        try
+                                        {
+                                            JournalStruct journalStruct = new JournalStruct()
+                                            {
+                                                URI = key,
+                                                Headers = MessagePackSerializer.Serialize(headerDictionary)
+                                            };
 
-                                        if (!bodyValidated) journalStruct.Body = output;
-                                        else journalStruct.Body = new byte[0];
+                                            if (!bodyValidated) journalStruct.Body = output;
+                                            else journalStruct.Body = new byte[0];
 
-                                        //mStream.Dispose();
+                                            // Append to the journal queue
+                                            memoryJournalQueue.AddReplace(indexChunkQueue, MessagePackSerializer.Serialize(journalStruct, messagePackOptions));
 
-                                        // Append to the journal queue
-                                        memoryJournalQueue.AddReplace(indexChunkQueue, MessagePackSerializer.Serialize(journalStruct, messagePackOptions));
-                                        
-                                        // Append unique key index
-                                        if (ulong.MaxValue == indexChunkQueue) indexChunkQueue = 0;
-                                        indexChunkQueue++;
-
+                                            // Append unique key index
+                                            if (ulong.MaxValue == indexChunkQueue) indexChunkQueue = 0;
+                                            indexChunkQueue++;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            await WriteToConsole("<Cache> [ERROR] Unable to write response body to cache" + Environment.NewLine + ex, ConsoleColor.Red);
+                                        }
                                     }
-                                    catch (Exception ex)
+                                    else
                                     {
-                                        await WriteToConsole("<Cache> [ERROR] Unable to write response body to cache" + Environment.NewLine + ex, ConsoleColor.Red);
+                                        // We only want one of these as Content-Size mismatch could be reason for appearing oversized
+                                        if (e.HttpClient.Response.ContentLength < minObjectBytesHTTP) await WriteToConsole("<Cache> Skipping cache as under " + TitaniumHelper.FormatSize(minObjectBytesHTTP) + ", key: " + TitaniumHelper.FormatURI(key));
+                                        else if (maxObjectSizeHTTP < e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache as larger than configured Max Object Size, key: " + TitaniumHelper.FormatURI(key), ConsoleColor.Magenta);
+                                        else if (output.LongLength != e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache due to mismatch between Content-Size and received object, key: " + TitaniumHelper.FormatURI(key), ConsoleColor.Magenta);
+                                        
                                     }
-
                                 }
-                                else
+                                catch (Exception ex)
                                 {
-
-                                    if (e.HttpClient.Response.ContentLength > 512) await WriteToConsole("<Cache> Skipping cache as under 512 Bytes, key: " + key);
-
-                                    // We only want one of these as Content-Size mismatch could be reason for appearing oversized
-                                    if (output.LongLength != e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache due to mismatch between Content-Size and received object, key: " + key, ConsoleColor.Magenta);
-                                    else if (maxObjectSizeHTTP < e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache as larger than configured Max Object Size, key: " + key, ConsoleColor.Magenta);
+                                    //throw new Exception("Unable to output headers to cache");
+                                    await WriteToConsole("<Cache> [ERROR] Unable to output headers to cache" + Environment.NewLine + ex, ConsoleColor.Red);
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                //throw new Exception("Unable to output headers to cache");
-                                await WriteToConsole("<Cache> [ERROR] Unable to output headers to cache" + Environment.NewLine + ex, ConsoleColor.Red);
-                            }
 
-
+                            }
                         }
                     }
                 }
@@ -1123,7 +1104,7 @@ namespace NKLI.DeDupeProxy
             else
             {
                 string reasonString = "[Method:" + e.HttpClient.Request.Method + "], [Code:" + e.HttpClient.Response.StatusCode + "], ";
-                await WriteToConsole("<Cache> Skipping " + reasonString + "[HasBody:" + e.HttpClient.Response.HasBody + "], URL:" + e.HttpClient.Request.Url, ConsoleColor.Magenta);
+                await WriteToConsole("<Cache> Skipping " + reasonString + "[HasBody:" + e.HttpClient.Response.HasBody + "]" + "[isChunked: " + e.HttpClient.Response.IsChunked + "], URL:" + TitaniumHelper.FormatURI(e.HttpClient.Request.Url), ConsoleColor.Magenta);
             }
         }
 
@@ -1205,10 +1186,46 @@ namespace NKLI.DeDupeProxy
             // Attempts to delete objects from DeDupe database
             foreach (string key in keys)
             {
-                if (deDupe.DeleteObject(key)) if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "' triggered removal of referenced object, Key:" + key.Substring(0, Math.Min(92, key.Length)), ConsoleColor.DarkMagenta);
-                else if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "', Failed to remove referenced object from cache, Key:" + key.Substring(0, Math.Min(92, key.Length)), ConsoleColor.Red);
+                if (deDupe.DeleteObject(key)) if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "' triggered removal of referenced object, Key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkMagenta);
+                else if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "', Failed to remove referenced object from cache, Key:" + TitaniumHelper.FormatURI(key), ConsoleColor.Red);
             }
         }
+
+        bool RetrieveHeaders(string key, out Dictionary<string, HttpHeader> headerDictionary)
+        {
+            headerDictionary = new Dictionary<string, HttpHeader>();
+
+            // We only attempt to replay from cache if cached headers also exist.
+            if (deDupe.ObjectExists("Headers_" + key))
+            {
+                try
+                {
+                    //bool deleteCache = false;
+                    // We only reconstruct the stream after successful object retrieval
+                    if (deDupe.RetrieveObject("Headers_" + key, out byte[] headerData))
+                    {
+                        HeaderPackObject restoredHeader = MessagePackSerializer.Deserialize<HeaderPackObject>(headerData);
+
+                        // Complain if dictionary is unexpectedly empty
+                        if (restoredHeader.Headers.Count == 0)
+                        {
+                            WriteToConsole("<Cache> [ERROR] (onRequest) Cache deserialization resulted in 0 headers", ConsoleColor.Red);
+                        }
+                        else
+                        {
+                            // Convert dictionary into response format
+                            foreach (var pair in restoredHeader.Headers) { headerDictionary.Add(pair.Key, new HttpHeader(pair.Key, pair.Value)); }
+
+                            return true;
+                        }
+                    }
+                }
+                catch { WriteToConsole("<Cache> Error occured retrieving headers", ConsoleColor.Red); }
+            }
+            return false;
+        }
+                
+        
 
         ///// <summary>
         ///// User data object as defined by user.
@@ -1551,6 +1568,11 @@ namespace NKLI.DeDupeProxy
             else if (size > 1048576) return String.Format("{0:n2}", ((decimal)size / (decimal)1048576)) + "MB";
             else if (size > 1024) return String.Format("{0:n2}", ((decimal)size / (decimal)1024)) + "KB";
             else return size + "B";
+        }
+
+        public static string FormatURI(string key)
+        {
+            return key.Substring(0, Math.Min(92, key.Length));
         }
 
         #region UNSAFE byte[] comparison - Let's do it fast
