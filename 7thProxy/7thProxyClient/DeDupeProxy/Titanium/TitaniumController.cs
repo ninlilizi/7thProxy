@@ -435,7 +435,7 @@ namespace NKLI.DeDupeProxy
             }
 
             // Don't decrypt these domains
-            dontDecrypt = new List<string> { "local", "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com", "mudfish.net", "steam-chat.com" };
+            dontDecrypt = new List<string> { "local", "digidump", "plex.direct", "activity.windows.com", "messenger.live.com", "login.live.com", "skype.com", "trouter.io", "dropbox.com", "boxcryptor.com", "google.com", "mudfish.net", "steam-chat.com", "glasswire.com", "chat.redditmedia.com", "adobe.com", "adobe.io", "adobecc.com", "creativecloud.com" };
             // Override Cache-Control policy headers for these domains
             overrideNoStoreNoCache = new List<string> { "nflxvideo.net" };
 
@@ -447,7 +447,7 @@ namespace NKLI.DeDupeProxy
 #if !DEBUG
             if (RunTime.IsWindows)
             {
-                proxyServer.SetAsSystemProxy(explicitEndPoint, ProxyProtocolType.AllHttp);
+                //proxyServer.SetAsSystemProxy(explicitEndPoint, ProxyProtocolType.AllHttp);
             }
 #endif
 
@@ -1133,7 +1133,8 @@ namespace NKLI.DeDupeProxy
             // access user data set in request to do something with it
             //var userData = e.ClientUserData as CustomUserData;
 
-            if (e.SslPolicyErrors == SslPolicyErrors.None)
+            // Lets ignore some errors for now, due to chained SSL inspection by Replify.
+            if (e.SslPolicyErrors == SslPolicyErrors.None || e.SslPolicyErrors == SslPolicyErrors.RemoteCertificateNameMismatch)
             {
                 e.IsValid = true;
             }
@@ -1142,6 +1143,7 @@ namespace NKLI.DeDupeProxy
                 WriteToConsole("Not encrypting due to SSL validation failure:" + e.SslPolicyErrors.ToString() + ", URI:" + e.Session.HttpClient.Request.Host, ConsoleColor.DarkRed);
                 dontDecrypt.Add(e.Session.HttpClient.Request.Host);
             }
+
 
             return Task.CompletedTask;
         }
