@@ -214,11 +214,11 @@ namespace NKLI.DeDupeProxy
             }
 
             Console.Write(Environment.NewLine + "-------------------------" + Environment.NewLine + "DeDupe Engine Initialized" + Environment.NewLine + "-------------------------" + Environment.NewLine);
-            
+
             // Gather index and dedupe stats
             if (deDupe.IndexStats(out NumObjects, out int cachedObjects, out NumChunks, out LogicalBytes, out PhysicalBytes, out DedupeRatioX, out DedupeRatioPercent))
             {
-                Console.WriteLine("  [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] [CachedKeys: " + cachedObjects  + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]");
+                Console.WriteLine("  [Objects:" + NumObjects + "]/[Chunks:" + NumChunks + "] [CachedKeys: " + cachedObjects + "] - [Logical:" + TitaniumHelper.FormatSize(LogicalBytes) + "]/[Physical:" + TitaniumHelper.FormatSize(PhysicalBytes) + "] + [Ratio:" + Math.Round(DedupeRatioPercent, 4) + "%]");
                 //Console.WriteLine("  Dedupe ratio     : " + DedupeRatioX + "X, " + DedupeRatioPercent + "%");
                 Console.WriteLine("-------------------------");
             }
@@ -435,7 +435,7 @@ namespace NKLI.DeDupeProxy
             }
 
             // Don't decrypt these domains
-            dontDecrypt = new List<string> { "local", "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com" };
+            dontDecrypt = new List<string> { "local", "plex.direct", "activity.windows.com", "dropbox.com", "boxcryptor.com", "google.com", "mudfish.net", "steam-chat.com" };
             // Override Cache-Control policy headers for these domains
             overrideNoStoreNoCache = new List<string> { "nflxvideo.net" };
 
@@ -452,7 +452,7 @@ namespace NKLI.DeDupeProxy
 #endif
 
         }
-        
+
 
 
         public void Stop()
@@ -737,7 +737,7 @@ namespace NKLI.DeDupeProxy
                             }
                         }
                         catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to restore cached object", ConsoleColor.Red); }
-                        
+
                     }
                     // In case of object retrieval failing, we wan't to remove it from the Index
                     else deleteCache = true;
@@ -749,7 +749,7 @@ namespace NKLI.DeDupeProxy
                     }
                 }
                 catch { await WriteToConsole("<Cache> [ERROR] (onRequest) Failure while attempting to restore cached headers", ConsoleColor.Red); }
-            }     
+            }
 
 
             // To cancel a request with a custom HTML content
@@ -828,7 +828,7 @@ namespace NKLI.DeDupeProxy
 
             //if (!e.ProxySession.Request.Host.Equals("medeczane.sgk.gov.tr")) return;
             //if (!e.HttpClient.Request.Host.Equals("www.gutenberg.org")) return;
-            if ((e.HttpClient.Request.Method == "GET" || e.HttpClient.Request.Method == "POST") 
+            if ((e.HttpClient.Request.Method == "GET" || e.HttpClient.Request.Method == "POST")
                 && ((e.HttpClient.Response.StatusCode == (int)HttpStatusCode.OK) || (e.HttpClient.Response.StatusCode == (int)HttpStatusCode.NotModified))
                 && (!e.HttpClient.Response.IsChunked) && (!e.HttpClient.Request.RequestUri.IsLoopback))
             {
@@ -840,7 +840,7 @@ namespace NKLI.DeDupeProxy
                     // Special handling for netflix
                     TitaniumHelper.NetflixKeyMorph(key, out key, out ulong start, out ulong end);
 
-                 
+
                     // If no headers or body received than don't even bother
                     if ((e.HttpClient.Response.Headers.Count() != 0))
                     {
@@ -863,7 +863,7 @@ namespace NKLI.DeDupeProxy
                         {
                             // Attempt to retrieve body
                             if (deDupe.RetrieveObject("Body_" + key, out byte[] objectData))
-                            {                          
+                            {
                                 // Attempt to retrieve headers
                                 if (RetrieveHeaders(key, out Dictionary<string, HttpHeader> headerDictionary))
                                 {
@@ -918,107 +918,111 @@ namespace NKLI.DeDupeProxy
                         //
                         if (bodyRetrieved)
                         {
-                        // Selectively override No-Store No-Cache directives
-                        bool overrideCache_Control = false;
-                        string hostname = e.HttpClient.Request.RequestUri.Host;
-                        foreach (string value in overrideNoStoreNoCache)
-                        {
-                            if (hostname.Contains(value))
+                            // Selectively override No-Store No-Cache directives
+                            bool overrideCache_Control = false;
+                            string hostname = e.HttpClient.Request.RequestUri.Host;
+                            foreach (string value in overrideNoStoreNoCache)
                             {
-                                overrideCache_Control = true;
-                                await WriteToConsole("<Cache> Cache-Control: [Policy: Override] for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
-                            }
-                        }
-
-                        // Respect cache control headers
-                        bool canCache = true;
-                        if ( (cacheControl.NoCache || cacheControl.NoStore || cacheControl.MaxAge.HasValue) && !overrideCache_Control)
-                        {
-                            string readableMessage = "";
-                            // No-Store
-                            if (cacheControl.NoStore)
-                            {
-                                canCache = false;
-                                readableMessage += "(No-Store) ";
-                            }
-                            // No-Cache
-                            if (cacheControl.NoCache)
-                            {
-                                if (canCache) e.HttpClient.Response.Headers.AddHeader("Expires", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                readableMessage += "(No-Cache) ";
-                            }
-                            // Max-Age
-                            if (cacheControl.MaxAge.HasValue)
-                            {
-                                readableMessage += "(Max-Age=" + String.Format("{0:n0}", cacheControl.MaxAge.Value.TotalSeconds) + ") ";
-
-                                if ((!cacheControl.NoCache) && (canCache))
+                                if (hostname.Contains(value))
                                 {
-                                    // Get DateTime indicated by Max-Age
-                                    string maxAgeDateTime = DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'");
+                                    overrideCache_Control = true;
+                                    await WriteToConsole("<Cache> Cache-Control: [Policy: Override] for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
+                                }
+                            }
 
-                                    if (e.HttpClient.Response.Headers.HeaderExists("Expires"))
+                            // Respect cache control headers
+                            bool canCache = true;
+                            if ((cacheControl.NoCache || cacheControl.NoStore || cacheControl.MaxAge.HasValue) && !overrideCache_Control)
+                            {
+                                string readableMessage = "";
+                                // No-Store
+                                if (cacheControl.NoStore)
+                                {
+                                    canCache = false;
+                                    readableMessage += "(No-Store) ";
+                                }
+                                // No-Cache
+                                if (cacheControl.NoCache)
+                                {
+                                    if (canCache) e.HttpClient.Response.Headers.AddHeader("Expires", DateTime.Now.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                    readableMessage += "(No-Cache) ";
+
+                                    // Let's not cache anything with cache control
+                                    //  headers for now due to integrity failures
+                                    canCache = false;
+                                }
+                                // Max-Age
+                                if (cacheControl.MaxAge.HasValue)
+                                {
+                                    readableMessage += "(Max-Age=" + String.Format("{0:n0}", cacheControl.MaxAge.Value.TotalSeconds) + ") ";
+
+                                    if ((!cacheControl.NoCache) && (canCache))
                                     {
-                                        bool policyMaxAge = false;
+                                        // Get DateTime indicated by Max-Age
+                                        string maxAgeDateTime = DateTime.Now.Add(cacheControl.MaxAge.Value).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'");
 
-                                        // Get Expires header
-                                        HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
-                                        try
+                                        if (e.HttpClient.Response.Headers.HeaderExists("Expires"))
                                         {
-                                            HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
-                                            if (header != null)
+                                            bool policyMaxAge = false;
+
+                                            // Get Expires header
+                                            HttpHeader cacheExpires = new HttpHeader("Expires", DateTime.Now.AddYears(1).ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'"));
+                                            try
                                             {
-                                                if (header.Value != "0") // TODO - Needs further debugging
+                                                HttpHeader header = e.HttpClient.Response.Headers.GetFirstHeader("Expires");
+                                                if (header != null)
                                                 {
-                                                    readableMessage = "(Expires) " + readableMessage;
-                                                    cacheExpires = header;
+                                                    if (header.Value != "0") // TODO - Needs further debugging
+                                                    {
+                                                        readableMessage = "(Expires) " + readableMessage;
+                                                        cacheExpires = header;
 
-                                                    // If Max-Age arrives before existing Expires header
-                                                    try
-                                                    {
-                                                        if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), Convert.ToDateTime(maxAgeDateTime))) policyMaxAge = true;
+                                                        // If Max-Age arrives before existing Expires header
+                                                        try
+                                                        {
+                                                            if (TitaniumHelper.IsExpired(Convert.ToDateTime(cacheExpires.Value), Convert.ToDateTime(maxAgeDateTime))) policyMaxAge = true;
+                                                        }
+                                                        catch (Exception ex)
+                                                        {
+                                                            readableMessage += "[Policy: ERROR] ";
+                                                            await WriteToConsole("<Cache> [ERROR] (onResponse) Exception occured comparing Expires/Max-Age" + Environment.NewLine + "maxAgeDateTime: " + maxAgeDateTime + ", Expires: " + cacheExpires.Value + Environment.NewLine + ex, ConsoleColor.Red);
+                                                        }
                                                     }
-                                                    catch (Exception ex)
-                                                    {
-                                                        readableMessage += "[Policy: ERROR] ";
-                                                        await WriteToConsole("<Cache> [ERROR] (onResponse) Exception occured comparing Expires/Max-Age" + Environment.NewLine + "maxAgeDateTime: " + maxAgeDateTime + ", Expires: " + cacheExpires.Value + Environment.NewLine + ex, ConsoleColor.Red);
-                                                    }
+                                                    else policyMaxAge = true;
                                                 }
-                                                else policyMaxAge = true;
                                             }
-                                        }
-                                        catch
-                                        {
-                                            await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
-                                        }
+                                            catch
+                                            {
+                                                await WriteToConsole("<Cache> (onResponse) Exception occured inspecting cache-control header", ConsoleColor.Red);
+                                            }
 
-                                        // If Max-Age arrives before existing Expires header
-                                        if (policyMaxAge)
+                                            // If Max-Age arrives before existing Expires header
+                                            if (policyMaxAge)
+                                            {
+                                                // Replace Expires with Max-Age derived timestape
+                                                e.HttpClient.Response.Headers.RemoveHeader("Expires");
+                                                e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime);
+                                                readableMessage += "[Policy: Max-Age] ";
+                                            }
+                                            else readableMessage += "[Policy: Expires] ";
+
+                                        }
+                                        // If Expires doesn't exist then add from MaxAge timestamp
+                                        else
                                         {
-                                            // Replace Expires with Max-Age derived timestape
-                                            e.HttpClient.Response.Headers.RemoveHeader("Expires");
                                             e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime);
                                             readableMessage += "[Policy: Max-Age] ";
                                         }
-                                        else readableMessage += "[Policy: Expires] ";
-
                                     }
-                                    // If Expires doesn't exist then add from MaxAge timestamp
                                     else
                                     {
-                                        e.HttpClient.Response.Headers.AddHeader("Expires", maxAgeDateTime);
-                                        readableMessage += "[Policy: Max-Age] ";
+                                        if (!canCache) readableMessage += "[Policy: NoStore] ";
+                                        else readableMessage += "[Policy: NoCache] ";
                                     }
                                 }
-                                else
-                                {
-                                    if (!canCache) readableMessage += "[Policy: NoStore] ";
-                                    else readableMessage += "[Policy: NoCache] ";
-                                }
-                            }
 
-                            await WriteToConsole("<Cache> Cache-Control: " + readableMessage + "header for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
-                        }
+                                await WriteToConsole("<Cache> Cache-Control: " + readableMessage + "header for key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkYellow);
+                            }
                             if (!canCache)
                             {
                                 if (deDupe.ObjectExists("Body_" + key)) deDupe.DeleteObject("Body_" + key);
@@ -1071,7 +1075,7 @@ namespace NKLI.DeDupeProxy
                                         if (e.HttpClient.Response.ContentLength < minObjectBytesHTTP) await WriteToConsole("<Cache> Skipping cache as under " + TitaniumHelper.FormatSize(minObjectBytesHTTP) + ", key: " + TitaniumHelper.FormatURI(key));
                                         else if (maxObjectSizeHTTP < e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache as larger than configured Max Object Size, key: " + TitaniumHelper.FormatURI(key), ConsoleColor.Magenta);
                                         else if (output.LongLength != e.HttpClient.Response.ContentLength) await WriteToConsole("<Cache> Skipping cache due to mismatch between Content-Size and received object, key: " + TitaniumHelper.FormatURI(key), ConsoleColor.Magenta);
-                                        
+
                                     }
                                 }
                                 catch (Exception ex)
@@ -1187,7 +1191,7 @@ namespace NKLI.DeDupeProxy
             foreach (string key in keys)
             {
                 if (deDupe.DeleteObject(key)) if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "' triggered removal of referenced object, Key:" + TitaniumHelper.FormatURI(key), ConsoleColor.DarkMagenta);
-                else if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "', Failed to remove referenced object from cache, Key:" + TitaniumHelper.FormatURI(key), ConsoleColor.Red);
+                    else if (DebugDedupe) await WriteToConsole("<DeDupe> Eviction of chunk '" + cacheEntry.Key + "', Failed to remove referenced object from cache, Key:" + TitaniumHelper.FormatURI(key), ConsoleColor.Red);
             }
         }
 
@@ -1224,8 +1228,8 @@ namespace NKLI.DeDupeProxy
             }
             return false;
         }
-                
-        
+
+
 
         ///// <summary>
         ///// User data object as defined by user.
@@ -1391,7 +1395,7 @@ namespace NKLI.DeDupeProxy
             {
                 // First delete from memory
                 if (key.StartsWith("Headers_")) if (memoryCacheHeaders.Contains(key.Remove(0, 8))) memoryCacheHeaders.Remove(key.Remove(0, 8));
-                else if (key.StartsWith("Body_")) if (memoryCacheBody.Contains(key.Remove(0, 5))) memoryCacheBody.Remove(key.Remove(0, 5));
+                    else if (key.StartsWith("Body_")) if (memoryCacheBody.Contains(key.Remove(0, 5))) memoryCacheBody.Remove(key.Remove(0, 5));
 
 
                 // Then delete from disk
