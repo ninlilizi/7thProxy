@@ -176,7 +176,7 @@ namespace NKLI.DeDupeProxy
 
             // optionally set the Certificate Engine
             // Under Mono or Non-Windows runtimes only BouncyCastle will be supported
-            //proxyServer.CertificateManager.CertificateEngine = Network.CertificateEngine.BouncyCastle;
+            proxyServer.CertificateManager.CertificateEngine = Titanium.Web.Proxy.Network.CertificateEngine.BouncyCastle;
 
             // optionally set the Root Certificate
             //proxyServer.CertificateManager.RootCertificate = new X509Certificate2("myCert.pfx", string.Empty, X509KeyStorageFlags.Exportable);
@@ -435,7 +435,9 @@ namespace NKLI.DeDupeProxy
             }
 
             // Don't decrypt these domains
-            dontDecrypt = new List<string> { "local", "digidump", "plex.direct", "activity.windows.com", "messenger.live.com", "login.live.com", "skype.com", "trouter.io", "dropbox.com", "boxcryptor.com", "google.com", "mudfish.net", "steam-chat.com", "glasswire.com", "chat.redditmedia.com", "adobe.com", "adobe.io", "adobecc.com", "creativecloud.com" };
+            dontDecrypt = new List<string> {
+                ".local", "digidump", "digidump.local", "plex.direct", "activity.windows.com", "messenger.live.com", "login.live.com", "skype.com", "trouter.io", "dropbox.com", "boxcryptor.com", "google.com", "mudfish.net", "steam-chat.com", "glasswire.com", "chat.redditmedia.com", "adobe.com", "adobe.io", "adobecc.com", "creativecloud.com", "unity.com", "unity3d.com", "discord.com", "npmjs.org", "ovh.com",
+                "oculus.com" };
             // Override Cache-Control policy headers for these domains
             overrideNoStoreNoCache = new List<string> { "nflxvideo.net" };
 
@@ -1133,8 +1135,9 @@ namespace NKLI.DeDupeProxy
             // access user data set in request to do something with it
             //var userData = e.ClientUserData as CustomUserData;
 
-            // Lets ignore some errors for now, due to chained SSL inspection by Replify.
-            if (e.SslPolicyErrors == SslPolicyErrors.None || e.SslPolicyErrors == SslPolicyErrors.RemoteCertificateNameMismatch)
+
+            // Lets ignore some errors with 
+            if (e.SslPolicyErrors == SslPolicyErrors.None || (e.Certificate.Issuer == "Replify-CA" && e.SslPolicyErrors == SslPolicyErrors.RemoteCertificateNameMismatch))
             {
                 e.IsValid = true;
             }

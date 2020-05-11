@@ -595,13 +595,21 @@ namespace SJP.DiskCache
         /// <exception cref="ArgumentNullException"><paramref name="key"/> is <c>null</c>.</exception>
         public bool TryGetValue(TKey key, out Stream stream)
         {
-            if (IsNull(key))
-                throw new ArgumentNullException(nameof(key));
+            try
+            {
+                if (IsNull(key))
+                    throw new ArgumentNullException(nameof(key));
 
-            var hasValue = ContainsKey(key);
-            stream = hasValue ? GetValue(key) : null;
+                var hasValue = ContainsKey(key);
+                stream = hasValue ? GetValue(key) : null;
 
-            return hasValue;
+                return hasValue;
+            }
+            catch
+            {
+                stream = null;
+                return false;
+            }
         }
 
         /// <summary>
